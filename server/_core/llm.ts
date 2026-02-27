@@ -1,3 +1,4 @@
+import { GoogleGenerativeAI, type Part } from "@google/generative-ai";
 import { ENV } from "./env";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
@@ -32,46 +33,12 @@ export type Message = {
   tool_call_id?: string;
 };
 
-export type Tool = {
-  type: "function";
-  function: {
-    name: string;
-    description?: string;
-    parameters?: Record<string, unknown>;
-  };
-};
-
-export type ToolChoicePrimitive = "none" | "auto" | "required";
-export type ToolChoiceByName = { name: string };
-export type ToolChoiceExplicit = {
-  type: "function";
-  function: {
-    name: string;
-  };
-};
-
-export type ToolChoice = ToolChoicePrimitive | ToolChoiceByName | ToolChoiceExplicit;
-
 export type InvokeParams = {
   messages: Message[];
-  tools?: Tool[];
-  toolChoice?: ToolChoice;
-  tool_choice?: ToolChoice;
+  responseFormat?: { type: "text" | "json_object" | "json_schema" };
+  response_format?: { type: "text" | "json_object" | "json_schema" };
   maxTokens?: number;
   max_tokens?: number;
-  outputSchema?: OutputSchema;
-  output_schema?: OutputSchema;
-  responseFormat?: ResponseFormat;
-  response_format?: ResponseFormat;
-};
-
-export type ToolCall = {
-  id: string;
-  type: "function";
-  function: {
-    name: string;
-    arguments: string;
-  };
 };
 
 export type InvokeResult = {
@@ -82,8 +49,7 @@ export type InvokeResult = {
     index: number;
     message: {
       role: Role;
-      content: string | Array<TextContent | ImageContent | FileContent>;
-      tool_calls?: ToolCall[];
+      content: string;
     };
     finish_reason: string | null;
   }>;
@@ -94,221 +60,124 @@ export type InvokeResult = {
   };
 };
 
-export type JsonSchema = {
-  name: string;
-  schema: Record<string, unknown>;
-  strict?: boolean;
-};
-
-export type OutputSchema = JsonSchema;
-
-export type ResponseFormat =
-  | { type: "text" }
-  | { type: "json_object" }
-  | { type: "json_schema"; json_schema: JsonSchema };
-
-const ensureArray = (value: MessageContent | MessageContent[]): MessageContent[] =>
-  Array.isArray(value) ? value : [value];
-
-const normalizeContentPart = (part: MessageContent): TextContent | ImageContent | FileContent => {
-  if (typeof part === "string") {
-    return { type: "text", text: part };
-  }
-
-  if (part.type === "text") {
-    return part;
-  }
-
-  if (part.type === "image_url") {
-    return part;
-  }
-
-  if (part.type === "file_url") {
-    return part;
-  }
-
-  throw new Error("Unsupported message content part");
-};
-
-const normalizeMessage = (message: Message) => {
-  const { role, name, tool_call_id } = message;
-
-  if (role === "tool" || role === "function") {
-    const content = ensureArray(message.content)
-      .map((part) => (typeof part === "string" ? part : JSON.stringify(part)))
-      .join("\n");
-
-    return {
-      role,
-      name,
-      tool_call_id,
-      content,
-    };
-  }
-
-  const contentParts = ensureArray(message.content).map(normalizeContentPart);
-
-  // If there's only text content, collapse to a single string for compatibility
-  if (contentParts.length === 1 && contentParts[0].type === "text") {
-    return {
-      role,
-      name,
-      content: contentParts[0].text,
-    };
-  }
-
+async function urlToInlineData(url: string): Promise<{ data: string; mimeType: string }> {
+  const response = await fetch(url);
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  const contentType = response.headers.get("content-type") || "image/jpeg";
   return {
-    role,
-    name,
-    content: contentParts,
+    data: buffer.toString("base64"),
+    mimeType: contentType.split(";")[0] || "image/jpeg",
   };
-};
+}
 
-const normalizeToolChoice = (
-  toolChoice: ToolChoice | undefined,
-  tools: Tool[] | undefined,
-): "none" | "auto" | ToolChoiceExplicit | undefined => {
-  if (!toolChoice) return undefined;
+async function convertContentToParts(
+  content: MessageContent | MessageContent[],
+): Promise<Part[]> {
+  const parts = Array.isArray(content) ? content : [content];
+  const result: Part[] = [];
 
-  if (toolChoice === "none" || toolChoice === "auto") {
-    return toolChoice;
-  }
-
-  if (toolChoice === "required") {
-    if (!tools || tools.length === 0) {
-      throw new Error("tool_choice 'required' was provided but no tools were configured");
+  for (const part of parts) {
+    if (typeof part === "string") {
+      result.push({ text: part });
+    } else if (part.type === "text") {
+      result.push({ text: part.text });
+    } else if (part.type === "image_url") {
+      const url = part.image_url.url;
+      if (url.startsWith("data:")) {
+        // Already base64 encoded data URI
+        const [header, data] = url.split(",");
+        const mimeType = header.split(":")[1].split(";")[0];
+        result.push({ inlineData: { data, mimeType } });
+      } else {
+        // Fetch and convert to inline data
+        const inlineData = await urlToInlineData(url);
+        result.push({ inlineData });
+      }
     }
-
-    if (tools.length > 1) {
-      throw new Error(
-        "tool_choice 'required' needs a single tool or specify the tool name explicitly",
-      );
-    }
-
-    return {
-      type: "function",
-      function: { name: tools[0].function.name },
-    };
+    // Skip file_url (not supported in basic Gemini text generation)
   }
 
-  if ("name" in toolChoice) {
-    return {
-      type: "function",
-      function: { name: toolChoice.name },
-    };
-  }
-
-  return toolChoice;
-};
-
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
-
-const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
-  }
-};
-
-const normalizeResponseFormat = ({
-  responseFormat,
-  response_format,
-  outputSchema,
-  output_schema,
-}: {
-  responseFormat?: ResponseFormat;
-  response_format?: ResponseFormat;
-  outputSchema?: OutputSchema;
-  output_schema?: OutputSchema;
-}):
-  | { type: "json_schema"; json_schema: JsonSchema }
-  | { type: "text" }
-  | { type: "json_object" }
-  | undefined => {
-  const explicitFormat = responseFormat || response_format;
-  if (explicitFormat) {
-    if (explicitFormat.type === "json_schema" && !explicitFormat.json_schema?.schema) {
-      throw new Error("responseFormat json_schema requires a defined schema object");
-    }
-    return explicitFormat;
-  }
-
-  const schema = outputSchema || output_schema;
-  if (!schema) return undefined;
-
-  if (!schema.name || !schema.schema) {
-    throw new Error("outputSchema requires both name and schema");
-  }
-
-  return {
-    type: "json_schema",
-    json_schema: {
-      name: schema.name,
-      schema: schema.schema,
-      ...(typeof schema.strict === "boolean" ? { strict: schema.strict } : {}),
-    },
-  };
-};
+  return result;
+}
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertApiKey();
+  if (!ENV.geminiApiKey) {
+    throw new Error("GEMINI_API_KEY is not configured");
+  }
 
-  const {
-    messages,
-    tools,
-    toolChoice,
-    tool_choice,
-    outputSchema,
-    output_schema,
-    responseFormat,
-    response_format,
-  } = params;
+  const genAI = new GoogleGenerativeAI(ENV.geminiApiKey);
 
-  const payload: Record<string, unknown> = {
+  // Separate system messages from conversation messages
+  const systemMessages = params.messages.filter((m) => m.role === "system");
+  const conversationMessages = params.messages.filter((m) => m.role !== "system");
+
+  // Build system instruction text
+  const systemInstruction =
+    systemMessages.length > 0
+      ? systemMessages
+          .map((m) => (typeof m.content === "string" ? m.content : ""))
+          .filter(Boolean)
+          .join("\n")
+      : undefined;
+
+  // Check if JSON output is requested
+  const responseFormatType =
+    (params.responseFormat?.type ?? params.response_format?.type) === "json_object"
+      ? "json_object"
+      : undefined;
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash-preview-04-17",
+    ...(systemInstruction ? { systemInstruction } : {}),
+  });
+
+  // Convert messages to Gemini history format (all but the last)
+  const history: { role: "user" | "model"; parts: Part[] }[] = [];
+  const lastMessage = conversationMessages[conversationMessages.length - 1];
+
+  for (const msg of conversationMessages.slice(0, -1)) {
+    const geminiRole = msg.role === "assistant" ? "model" : "user";
+    history.push({
+      role: geminiRole,
+      parts: await convertContentToParts(msg.content),
+    });
+  }
+
+  const chat = model.startChat({ history });
+
+  // Build parts for the last message
+  const lastParts = lastMessage
+    ? await convertContentToParts(lastMessage.content)
+    : [{ text: "" }];
+
+  // If JSON output requested, append a reminder
+  const finalParts =
+    responseFormatType === "json_object"
+      ? [...lastParts, { text: "\n\nRespond with valid JSON only, no markdown code fences or explanation." }]
+      : lastParts;
+
+  const result = await chat.sendMessage(finalParts);
+  const responseText = result.response.text();
+
+  return {
+    id: `gemini-${Date.now()}`,
+    created: Math.floor(Date.now() / 1000),
     model: "gemini-2.5-flash",
-    messages: messages.map(normalizeMessage),
-  };
-
-  if (tools && tools.length > 0) {
-    payload.tools = tools;
-  }
-
-  const normalizedToolChoice = normalizeToolChoice(toolChoice || tool_choice, tools);
-  if (normalizedToolChoice) {
-    payload.tool_choice = normalizedToolChoice;
-  }
-
-  payload.max_tokens = 32768;
-  payload.thinking = {
-    budget_tokens: 128,
-  };
-
-  const normalizedResponseFormat = normalizeResponseFormat({
-    responseFormat,
-    response_format,
-    outputSchema,
-    output_schema,
-  });
-
-  if (normalizedResponseFormat) {
-    payload.response_format = normalizedResponseFormat;
-  }
-
-  const response = await fetch(resolveApiUrl(), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: responseText,
+        },
+        finish_reason: "stop",
+      },
+    ],
+    usage: {
+      prompt_tokens: result.response.usageMetadata?.promptTokenCount ?? 0,
+      completion_tokens: result.response.usageMetadata?.candidatesTokenCount ?? 0,
+      total_tokens: result.response.usageMetadata?.totalTokenCount ?? 0,
     },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`);
-  }
-
-  return (await response.json()) as InvokeResult;
+  };
 }
