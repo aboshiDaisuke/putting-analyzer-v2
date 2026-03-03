@@ -1,6 +1,4 @@
 import { z } from "zod";
-import { COOKIE_NAME } from "../shared/const.js";
-import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
@@ -97,12 +95,10 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+    logout: publicProcedure.mutation(() => {
+      // Cookie clearing is handled by REST endpoint /api/auth/logout
+      // Mobile clients use supabase.auth.signOut() directly
+      return { success: true } as const;
     }),
   }),
 

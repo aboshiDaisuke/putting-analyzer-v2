@@ -1,0 +1,10 @@
+{
+  "buildCommand": "pnpm expo export --platform web",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

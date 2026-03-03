@@ -6,8 +6,6 @@ import { COOKIE_NAME } from "../../shared/const.js";
 import { ENV } from "./env";
 
 export type TrpcContext = {
-  req: CreateExpressContextOptions["req"];
-  res: CreateExpressContextOptions["res"];
   user: User | null;
 };
 
@@ -20,6 +18,36 @@ function parseCookies(cookieHeader: string): Record<string, string> {
   return cookies;
 }
 
+/** Supabase access token → local DB User。auth API routes と tRPC context で共用 */
+export async function resolveUserFromToken(token: string): Promise<User | null> {
+  if (!token || !ENV.supabaseUrl || !ENV.supabaseServiceRoleKey) return null;
+
+  const supabase = createClient(ENV.supabaseUrl, ENV.supabaseServiceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const {
+    data: { user: supabaseUser },
+    error,
+  } = await supabase.auth.getUser(token);
+
+  if (error || !supabaseUser) return null;
+
+  await upsertUser({
+    openId: supabaseUser.id,
+    name:
+      supabaseUser.user_metadata?.full_name ??
+      supabaseUser.user_metadata?.name ??
+      null,
+    email: supabaseUser.email ?? null,
+    loginMethod: supabaseUser.app_metadata?.provider ?? null,
+    lastSignedIn: new Date(),
+  });
+
+  return (await getUserByOpenId(supabaseUser.id)) ?? null;
+}
+
+/** Express dev server 用 context */
 export async function createContext(opts: CreateExpressContextOptions): Promise<TrpcContext> {
   let user: User | null = null;
 
@@ -28,51 +56,39 @@ export async function createContext(opts: CreateExpressContextOptions): Promise<
     const cookieHeader = opts.req.headers.cookie;
 
     let token: string | null = null;
-
-    // Extract token from Authorization header (Bearer token)
-    if (authHeader?.startsWith("Bearer ")) {
-      token = authHeader.slice(7).trim();
-    }
-
-    // Fallback: check session cookie
+    if (authHeader?.startsWith("Bearer ")) token = authHeader.slice(7).trim();
     if (!token && cookieHeader) {
       const cookies = parseCookies(cookieHeader);
       token = cookies[COOKIE_NAME] ?? null;
     }
 
-    if (token && ENV.supabaseUrl && ENV.supabaseServiceRoleKey) {
-      const supabase = createClient(ENV.supabaseUrl, ENV.supabaseServiceRoleKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      });
-
-      const {
-        data: { user: supabaseUser },
-        error,
-      } = await supabase.auth.getUser(token);
-
-      if (!error && supabaseUser) {
-        // Sync user to our DB on each authenticated request
-        await upsertUser({
-          openId: supabaseUser.id,
-          name:
-            supabaseUser.user_metadata?.full_name ??
-            supabaseUser.user_metadata?.name ??
-            null,
-          email: supabaseUser.email ?? null,
-          loginMethod: supabaseUser.app_metadata?.provider ?? null,
-          lastSignedIn: new Date(),
-        });
-        user = (await getUserByOpenId(supabaseUser.id)) ?? null;
-      }
-    }
-  } catch (error) {
-    // Authentication is optional for public procedures.
+    if (token) user = await resolveUserFromToken(token);
+  } catch {
     user = null;
   }
 
-  return {
-    req: opts.req,
-    res: opts.res,
-    user,
-  };
+  return { user };
+}
+
+/** Vercel fetch adapter 用 context */
+export async function createFetchContext(req: Request): Promise<TrpcContext> {
+  let user: User | null = null;
+
+  try {
+    const authHeader = req.headers.get("authorization");
+    const cookieHeader = req.headers.get("cookie");
+
+    let token: string | null = null;
+    if (authHeader?.startsWith("Bearer ")) token = authHeader.slice(7).trim();
+    if (!token && cookieHeader) {
+      const cookies = parseCookies(cookieHeader);
+      token = cookies[COOKIE_NAME] ?? null;
+    }
+
+    if (token) user = await resolveUserFromToken(token);
+  } catch {
+    user = null;
+  }
+
+  return { user };
 }
