@@ -3,6 +3,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
+import { golfRouter } from "./golfRouter";
 
 const OCR_SYSTEM_PROMPT = `あなたはゴルフのパッティングスコアカード「Stroke Gained Putting (OCR版)」を読み取る専門のOCRシステムです。
 
@@ -101,6 +102,8 @@ export const appRouter = router({
       return { success: true } as const;
     }),
   }),
+
+  golf: golfRouter,
 
   ocr: router({
     // スコアカード画像をアップロードしてS3に保存

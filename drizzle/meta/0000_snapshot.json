@@ -1,53 +1,701 @@
 {
-  "version": "5",
-  "dialect": "mysql",
-  "id": "3c3a03ea-b871-416a-b531-aa772cca8b00",
+  "id": "bdaef774-ace3-4151-a7d1-00c797435917",
   "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
   "tables": {
-    "users": {
-      "name": "users",
+    "public.courses": {
+      "name": "courses",
+      "schema": "",
       "columns": {
         "id": {
           "name": "id",
-          "type": "int",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(256)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "location": {
+          "name": "location",
+          "type": "varchar(256)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "greens": {
+          "name": "greens",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": true
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "courses_userId_users_id_fk": {
+          "name": "courses_userId_users_id_fk",
+          "tableFrom": "courses",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.holes": {
+      "name": "holes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "roundId": {
+          "name": "roundId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "holeNumber": {
+          "name": "holeNumber",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "totalPutts": {
+          "name": "totalPutts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "holes_roundId_rounds_id_fk": {
+          "name": "holes_roundId_rounds_id_fk",
+          "tableFrom": "holes",
+          "tableTo": "rounds",
+          "columnsFrom": [
+            "roundId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.putters": {
+      "name": "putters",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "brandName": {
+          "name": "brandName",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "productName": {
+          "name": "productName",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "length": {
+          "name": "length",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lieAngle": {
+          "name": "lieAngle",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "weight": {
+          "name": "weight",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gripName": {
+          "name": "gripName",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "startDate": {
+          "name": "startDate",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usageCount": {
+          "name": "usageCount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "ranking": {
+          "name": "ranking",
+          "type": "ranking",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'ace'"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "putters_userId_users_id_fk": {
+          "name": "putters_userId_users_id_fk",
+          "tableFrom": "putters",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.putts": {
+      "name": "putts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "holeId": {
+          "name": "holeId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "strokeNumber": {
+          "name": "strokeNumber",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cupIn": {
+          "name": "cupIn",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "distPrev": {
+          "name": "distPrev",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result": {
+          "name": "result",
+          "type": "scoreResult",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lengthSteps": {
+          "name": "lengthSteps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lengthYards": {
+          "name": "lengthYards",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "distanceMeters": {
+          "name": "distanceMeters",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "missedDirection": {
+          "name": "missedDirection",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "touch": {
+          "name": "touch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lineUD": {
+          "name": "lineUD",
+          "type": "slopeUpDown",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lineLR": {
+          "name": "lineLR",
+          "type": "slopeLeftRight",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mental": {
+          "name": "mental",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "putts_holeId_holes_id_fk": {
+          "name": "putts_holeId_holes_id_fk",
+          "tableFrom": "putts",
+          "tableTo": "holes",
+          "columnsFrom": [
+            "holeId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rounds": {
+      "name": "rounds",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date": {
+          "name": "date",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "courseId": {
+          "name": "courseId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "courseName": {
+          "name": "courseName",
+          "type": "varchar(256)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "frontNineGreen": {
+          "name": "frontNineGreen",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "backNineGreen": {
+          "name": "backNineGreen",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "weather": {
+          "name": "weather",
+          "type": "weather",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "temperature": {
+          "name": "temperature",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "windSpeed": {
+          "name": "windSpeed",
+          "type": "windSpeed",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "roundType": {
+          "name": "roundType",
+          "type": "roundType",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "competitionFormat": {
+          "name": "competitionFormat",
+          "type": "competitionFormat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grassType": {
+          "name": "grassType",
+          "type": "grassType",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stimpmeter": {
+          "name": "stimpmeter",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mowingHeight": {
+          "name": "mowingHeight",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "compaction": {
+          "name": "compaction",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "greenCondition": {
+          "name": "greenCondition",
+          "type": "greenCondition",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "putterId": {
+          "name": "putterId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "putterName": {
+          "name": "putterName",
+          "type": "varchar(256)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "totalPutts": {
+          "name": "totalPutts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "rounds_userId_users_id_fk": {
+          "name": "rounds_userId_users_id_fk",
+          "tableFrom": "rounds",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "rounds_courseId_courses_id_fk": {
+          "name": "rounds_courseId_courses_id_fk",
+          "tableFrom": "rounds",
+          "tableTo": "courses",
+          "columnsFrom": [
+            "courseId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "rounds_putterId_putters_id_fk": {
+          "name": "rounds_putterId_putters_id_fk",
+          "tableFrom": "rounds",
+          "tableTo": "putters",
+          "columnsFrom": [
+            "putterId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.userProfiles": {
+      "name": "userProfiles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gender": {
+          "name": "gender",
+          "type": "gender",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'male'"
+        },
+        "birthDate": {
+          "name": "birthDate",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "handicap": {
+          "name": "handicap",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "strideLength": {
+          "name": "strideLength",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0.7
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "userProfiles_userId_users_id_fk": {
+          "name": "userProfiles_userId_users_id_fk",
+          "tableFrom": "userProfiles",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "userProfiles_userId_unique": {
+          "name": "userProfiles_userId_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "userId"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
         },
         "openId": {
           "name": "openId",
           "type": "varchar(64)",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
+          "notNull": true
         },
         "name": {
           "name": "name",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
+          "notNull": false
         },
         "email": {
           "name": "email",
           "type": "varchar(320)",
           "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
+          "notNull": false
         },
         "loginMethod": {
           "name": "loginMethod",
           "type": "varchar(64)",
           "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
+          "notNull": false
         },
         "role": {
           "name": "role",
-          "type": "enum('user','admin')",
+          "type": "role",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
           "default": "'user'"
         },
         "createdAt": {
@@ -55,52 +703,168 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "default": "(now())"
+          "default": "now()"
         },
         "updatedAt": {
           "name": "updatedAt",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
+          "default": "now()"
         },
         "lastSignedIn": {
           "name": "lastSignedIn",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "default": "(now())"
+          "default": "now()"
         }
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "users_id": {
-          "name": "users_id",
-          "columns": ["id"]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "users_openId_unique": {
           "name": "users_openId_unique",
-          "columns": ["openId"]
+          "nullsNotDistinct": false,
+          "columns": [
+            "openId"
+          ]
         }
       },
-      "checkConstraint": {}
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     }
   },
+  "enums": {
+    "public.competitionFormat": {
+      "name": "competitionFormat",
+      "schema": "public",
+      "values": [
+        "stroke",
+        "match"
+      ]
+    },
+    "public.gender": {
+      "name": "gender",
+      "schema": "public",
+      "values": [
+        "male",
+        "female",
+        "other"
+      ]
+    },
+    "public.grassType": {
+      "name": "grassType",
+      "schema": "public",
+      "values": [
+        "bent",
+        "korai",
+        "bermuda",
+        "other"
+      ]
+    },
+    "public.greenCondition": {
+      "name": "greenCondition",
+      "schema": "public",
+      "values": [
+        "excellent",
+        "good",
+        "fair"
+      ]
+    },
+    "public.ranking": {
+      "name": "ranking",
+      "schema": "public",
+      "values": [
+        "ace",
+        "2nd",
+        "3rd",
+        "4th",
+        "5th"
+      ]
+    },
+    "public.role": {
+      "name": "role",
+      "schema": "public",
+      "values": [
+        "user",
+        "admin"
+      ]
+    },
+    "public.roundType": {
+      "name": "roundType",
+      "schema": "public",
+      "values": [
+        "competition",
+        "club_competition",
+        "private",
+        "practice"
+      ]
+    },
+    "public.scoreResult": {
+      "name": "scoreResult",
+      "schema": "public",
+      "values": [
+        "eagle",
+        "birdie",
+        "par",
+        "bogey",
+        "double_bogey_plus"
+      ]
+    },
+    "public.slopeLeftRight": {
+      "name": "slopeLeftRight",
+      "schema": "public",
+      "values": [
+        "straight",
+        "left",
+        "right",
+        "left_right",
+        "right_left"
+      ]
+    },
+    "public.slopeUpDown": {
+      "name": "slopeUpDown",
+      "schema": "public",
+      "values": [
+        "flat",
+        "uphill",
+        "downhill",
+        "up_down",
+        "down_up"
+      ]
+    },
+    "public.weather": {
+      "name": "weather",
+      "schema": "public",
+      "values": [
+        "sunny",
+        "cloudy",
+        "rainy",
+        "windy"
+      ]
+    },
+    "public.windSpeed": {
+      "name": "windSpeed",
+      "schema": "public",
+      "values": [
+        "calm",
+        "light",
+        "moderate",
+        "strong"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
   "views": {},
   "_meta": {
+    "columns": {},
     "schemas": {},
-    "tables": {},
-    "columns": {}
-  },
-  "internal": {
-    "tables": {},
-    "indexes": {}
+    "tables": {}
   }
 }

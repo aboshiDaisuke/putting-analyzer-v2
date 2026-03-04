@@ -1,36 +1,77 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+/**
+ * storage.ts
+ *
+ * Backward-compatible re-export layer.
+ *
+ * Most functions are delegated to lib/api-golf.ts (server via tRPC).
+ * getUserProfile / saveUserProfile also fall back to AsyncStorage so the app
+ * remains usable before the user is authenticated (e.g. profile name is stored
+ * locally until a server round-trip can succeed).
+ */
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   UserProfile,
   Putter,
   GolfCourse,
   Round,
+  HoleData,
   STORAGE_KEYS,
   DEFAULT_USER_PROFILE,
-} from './types';
+} from "./types";
 
-// ユニークID生成
+import * as ApiGolf from "./api-golf";
+
+// ─── ID generator (kept for backward compat; not used for server data) ────────
+
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
-// ユーザープロフィール
+// ─── User Profile ─────────────────────────────────────────────────────────────
+// Falls back to AsyncStorage so an unauthenticated user can still store a name.
+
 export async function getUserProfile(): Promise<UserProfile | null> {
+  try {
+    const profile = await ApiGolf.getUserProfile();
+    if (profile) {
+      // Also read local name from AsyncStorage and merge (name isn't in the DB profile)
+      try {
+        const local = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
+        if (local) {
+          const localProfile: UserProfile = JSON.parse(local);
+          if (localProfile.name) profile.name = localProfile.name;
+        }
+      } catch {
+        // Ignore AsyncStorage read errors
+      }
+      return profile;
+    }
+  } catch {
+    // API unavailable — fall through to local storage
+  }
+
+  // AsyncStorage fallback
   try {
     const data = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
     return data ? JSON.parse(data) : null;
   } catch (error) {
-    console.error('Error getting user profile:', error);
+    console.error("[storage] Error getting user profile from AsyncStorage:", error);
     return null;
   }
 }
 
-export async function saveUserProfile(profile: Partial<UserProfile>): Promise<UserProfile> {
+export async function saveUserProfile(
+  profile: Partial<UserProfile>,
+): Promise<UserProfile> {
+  // Always persist to AsyncStorage (covers offline / unauthenticated case)
+  let localProfile: UserProfile;
   try {
-    const existing = await getUserProfile();
+    const existing = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
     const now = new Date().toISOString();
-    
-    const updated: UserProfile = existing
-      ? { ...existing, ...profile, updatedAt: now }
+    const parsed: UserProfile | null = existing ? JSON.parse(existing) : null;
+    localProfile = parsed
+      ? { ...parsed, ...profile, updatedAt: now }
       : {
           id: generateId(),
           ...DEFAULT_USER_PROFILE,
@@ -38,201 +79,115 @@ export async function saveUserProfile(profile: Partial<UserProfile>): Promise<Us
           createdAt: now,
           updatedAt: now,
         };
-    
-    await AsyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(updated));
-    return updated;
+    await AsyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(localProfile));
   } catch (error) {
-    console.error('Error saving user profile:', error);
-    throw error;
-  }
-}
-
-// パター管理
-export async function getPutters(): Promise<Putter[]> {
-  try {
-    const data = await AsyncStorage.getItem(STORAGE_KEYS.PUTTERS);
-    return data ? JSON.parse(data) : [];
-  } catch (error) {
-    console.error('Error getting putters:', error);
-    return [];
-  }
-}
-
-export async function savePutter(putter: Omit<Putter, 'id' | 'createdAt' | 'updatedAt'>): Promise<Putter> {
-  try {
-    const putters = await getPutters();
+    console.error("[storage] Error saving user profile to AsyncStorage:", error);
     const now = new Date().toISOString();
-    
-    const newPutter: Putter = {
-      ...putter,
+    localProfile = {
       id: generateId(),
+      ...DEFAULT_USER_PROFILE,
+      ...profile,
       createdAt: now,
       updatedAt: now,
     };
-    
-    putters.push(newPutter);
-    await AsyncStorage.setItem(STORAGE_KEYS.PUTTERS, JSON.stringify(putters));
-    return newPutter;
-  } catch (error) {
-    console.error('Error saving putter:', error);
-    throw error;
+  }
+
+  // Best-effort server sync (non-fatal on failure)
+  try {
+    const serverProfile = await ApiGolf.saveUserProfile(profile);
+    // Keep the locally-stored name and merge server data
+    return { ...serverProfile, name: localProfile.name };
+  } catch {
+    // Server unavailable — return local data
+    return localProfile;
   }
 }
 
-export async function updatePutter(id: string, updates: Partial<Putter>): Promise<Putter | null> {
-  try {
-    const putters = await getPutters();
-    const index = putters.findIndex(p => p.id === id);
-    
-    if (index === -1) return null;
-    
-    putters[index] = {
-      ...putters[index],
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-    
-    await AsyncStorage.setItem(STORAGE_KEYS.PUTTERS, JSON.stringify(putters));
-    return putters[index];
-  } catch (error) {
-    console.error('Error updating putter:', error);
-    throw error;
-  }
+// ─── Putters ──────────────────────────────────────────────────────────────────
+
+export async function getPutters(): Promise<Putter[]> {
+  return ApiGolf.getPutters();
+}
+
+export async function getPutter(id: string): Promise<Putter | null> {
+  return ApiGolf.getPutter(id);
+}
+
+export async function savePutter(
+  putter: Omit<Putter, "id" | "createdAt" | "updatedAt">,
+): Promise<Putter> {
+  return ApiGolf.savePutter(putter);
+}
+
+export async function updatePutter(
+  id: string,
+  updates: Partial<Putter>,
+): Promise<Putter | null> {
+  return ApiGolf.updatePutter(id, updates);
 }
 
 export async function deletePutter(id: string): Promise<boolean> {
-  try {
-    const putters = await getPutters();
-    const filtered = putters.filter(p => p.id !== id);
-    await AsyncStorage.setItem(STORAGE_KEYS.PUTTERS, JSON.stringify(filtered));
-    return true;
-  } catch (error) {
-    console.error('Error deleting putter:', error);
-    return false;
-  }
+  return ApiGolf.deletePutter(id);
 }
 
-// コース管理
+// ─── Courses ──────────────────────────────────────────────────────────────────
+
 export async function getCourses(): Promise<GolfCourse[]> {
-  try {
-    const data = await AsyncStorage.getItem(STORAGE_KEYS.COURSES);
-    return data ? JSON.parse(data) : [];
-  } catch (error) {
-    console.error('Error getting courses:', error);
-    return [];
-  }
+  return ApiGolf.getCourses();
 }
 
-export async function saveCourse(course: Omit<GolfCourse, 'id' | 'createdAt'>): Promise<GolfCourse> {
-  try {
-    const courses = await getCourses();
-    const now = new Date().toISOString();
-    
-    const newCourse: GolfCourse = {
-      ...course,
-      id: generateId(),
-      createdAt: now,
-    };
-    
-    courses.push(newCourse);
-    await AsyncStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(courses));
-    return newCourse;
-  } catch (error) {
-    console.error('Error saving course:', error);
-    throw error;
-  }
+export async function saveCourse(
+  course: Omit<GolfCourse, "id" | "createdAt">,
+): Promise<GolfCourse> {
+  return ApiGolf.saveCourse(course);
 }
 
 export async function deleteCourse(id: string): Promise<boolean> {
-  try {
-    const courses = await getCourses();
-    const filtered = courses.filter(c => c.id !== id);
-    await AsyncStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(filtered));
-    return true;
-  } catch (error) {
-    console.error('Error deleting course:', error);
-    return false;
-  }
+  return ApiGolf.deleteCourse(id);
 }
 
-// ラウンド管理
+// ─── Rounds ───────────────────────────────────────────────────────────────────
+
 export async function getRounds(): Promise<Round[]> {
-  try {
-    const data = await AsyncStorage.getItem(STORAGE_KEYS.ROUNDS);
-    const rounds: Round[] = data ? JSON.parse(data) : [];
-    // 日付降順でソート
-    return rounds.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  } catch (error) {
-    console.error('Error getting rounds:', error);
-    return [];
-  }
+  return ApiGolf.getRounds();
 }
 
 export async function getRound(id: string): Promise<Round | null> {
-  try {
-    const rounds = await getRounds();
-    return rounds.find(r => r.id === id) || null;
-  } catch (error) {
-    console.error('Error getting round:', error);
-    return null;
-  }
+  return ApiGolf.getRound(id);
 }
 
-export async function saveRound(round: Omit<Round, 'id' | 'createdAt' | 'updatedAt'>): Promise<Round> {
-  try {
-    const rounds = await getRounds();
-    const now = new Date().toISOString();
-    
-    const newRound: Round = {
-      ...round,
-      id: generateId(),
-      createdAt: now,
-      updatedAt: now,
-    };
-    
-    rounds.push(newRound);
-    await AsyncStorage.setItem(STORAGE_KEYS.ROUNDS, JSON.stringify(rounds));
-    return newRound;
-  } catch (error) {
-    console.error('Error saving round:', error);
-    throw error;
-  }
+export async function saveRound(
+  round: Omit<Round, "id" | "createdAt" | "updatedAt">,
+): Promise<Round> {
+  return ApiGolf.saveRound(round);
 }
 
-export async function updateRound(id: string, updates: Partial<Round>): Promise<Round | null> {
-  try {
-    const rounds = await getRounds();
-    const index = rounds.findIndex(r => r.id === id);
-    
-    if (index === -1) return null;
-    
-    rounds[index] = {
-      ...rounds[index],
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-    
-    await AsyncStorage.setItem(STORAGE_KEYS.ROUNDS, JSON.stringify(rounds));
-    return rounds[index];
-  } catch (error) {
-    console.error('Error updating round:', error);
-    throw error;
-  }
+export async function updateRound(
+  id: string,
+  updates: Partial<Round>,
+): Promise<Round | null> {
+  return ApiGolf.updateRound(id, updates);
 }
 
 export async function deleteRound(id: string): Promise<boolean> {
-  try {
-    const rounds = await getRounds();
-    const filtered = rounds.filter(r => r.id !== id);
-    await AsyncStorage.setItem(STORAGE_KEYS.ROUNDS, JSON.stringify(filtered));
-    return true;
-  } catch (error) {
-    console.error('Error deleting round:', error);
-    return false;
-  }
+  return ApiGolf.deleteRound(id);
 }
 
-// 全データクリア（開発用）
+// ─── Holes ────────────────────────────────────────────────────────────────────
+
+export async function saveHolesForRound(
+  roundId: string,
+  holes: HoleData[],
+): Promise<{ roundId: string; holes: HoleData[] }> {
+  return ApiGolf.saveHolesForRound(roundId, holes);
+}
+
+// ─── Utility ──────────────────────────────────────────────────────────────────
+
+/**
+ * clearAllData — clears local AsyncStorage only.
+ * Server data is not deleted (use account deletion for that).
+ */
 export async function clearAllData(): Promise<void> {
   try {
     await AsyncStorage.multiRemove([
@@ -242,7 +197,7 @@ export async function clearAllData(): Promise<void> {
       STORAGE_KEYS.ROUNDS,
     ]);
   } catch (error) {
-    console.error('Error clearing all data:', error);
+    console.error("[storage] Error clearing local data:", error);
     throw error;
   }
 }

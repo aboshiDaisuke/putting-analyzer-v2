@@ -14,7 +14,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
-import { getPutters, savePutter, updatePutter } from "@/lib/storage";
+import { getPutter, savePutter, updatePutter } from "@/lib/storage";
 import { LABELS } from "@/lib/types";
 
 type PutterRanking = "ace" | "2nd" | "3rd" | "4th" | "5th";
@@ -43,8 +43,7 @@ export default function PutterFormScreen() {
   }, [id]);
 
   const loadPutter = async (putterId: string) => {
-    const putters = await getPutters();
-    const putter = putters.find((p) => p.id === putterId);
+    const putter = await getPutter(putterId);
     if (putter) {
       setBrandName(putter.brandName);
       setProductName(putter.productName);

@@ -14,7 +14,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
-import { getRound, updateRound, getUserProfile } from "@/lib/storage";
+import { getRound, updateRound, getUserProfile, saveHolesForRound } from "@/lib/storage";
 import { calculateDistance } from "@/lib/analytics";
 import {
   Round,
@@ -203,6 +203,7 @@ export default function HoleInputScreen() {
     const savedPutts = saveCurrentPutt();
     const totalPutts = savedPutts.length;
 
+    // Build the updated holes array in local state
     const updatedHoles = round.holes.map((h) =>
       h.holeNumber === currentHole
         ? { ...h, scoreResult, totalPutts, putts: savedPutts }
@@ -211,12 +212,19 @@ export default function HoleInputScreen() {
 
     const totalRoundPutts = updatedHoles.reduce((sum, h) => sum + h.totalPutts, 0);
 
-    const updatedRound = await updateRound(round.id, {
-      holes: updatedHoles,
-      totalPutts: totalRoundPutts,
-    });
+    try {
+      // Persist hole data to the server (separate holes table)
+      await saveHolesForRound(round.id, updatedHoles);
 
-    if (updatedRound) {
+      // Update the round's totalPutts metadata
+      await updateRound(round.id, { totalPutts: totalRoundPutts });
+
+      // Update local state with merged holes (preserve scoreResult from UI state)
+      const updatedRound: Round = {
+        ...round,
+        holes: updatedHoles,
+        totalPutts: totalRoundPutts,
+      };
       setRound(updatedRound);
 
       if (nextHole === "finish") {
@@ -225,6 +233,9 @@ export default function HoleInputScreen() {
         setCurrentHole(nextHole);
         loadHoleData(updatedRound, nextHole);
       }
+    } catch (error) {
+      console.error("[hole-input] saveHoleAndNavigate error:", error);
+      Alert.alert("エラー", "データの保存に失敗しました。もう一度お試しください。");
     }
   };
 
