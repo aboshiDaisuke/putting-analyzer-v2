@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pnpm expo export --platform web",
+  "buildCommand": "npx expo export --platform web",
   "outputDirectory": "dist",
   "rewrites": [
     {
