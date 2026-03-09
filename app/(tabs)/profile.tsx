@@ -24,6 +24,7 @@ import {
   deleteCourse,
 } from "@/lib/storage";
 import { UserProfile, Putter, GolfCourse, LABELS } from "@/lib/types";
+import { supabase } from "@/lib/supabase";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -84,6 +85,19 @@ export default function ProfileScreen() {
         },
       ]
     );
+  };
+
+  const handleLogout = async () => {
+    Alert.alert("ログアウト", "ログアウトしますか？", [
+      { text: "キャンセル", style: "cancel" },
+      {
+        text: "ログアウト",
+        style: "destructive",
+        onPress: async () => {
+          await supabase.auth.signOut();
+        },
+      },
+    ]);
   };
 
   const handleDeleteCourse = (course: GolfCourse) => {
@@ -313,6 +327,18 @@ export default function ProfileScreen() {
                 </Text>
               )}
             </View>
+            {/* ログアウト */}
+            <TouchableOpacity
+              onPress={handleLogout}
+              className="bg-surface rounded-2xl p-4 border border-border flex-row items-center justify-center gap-2"
+              activeOpacity={0.7}
+            >
+              <IconSymbol name="rectangle.portrait.and.arrow.right" size={20} color={colors.error} />
+              <Text style={{ color: colors.error }} className="font-semibold text-base">
+                ログアウト
+              </Text>
+            </TouchableOpacity>
+
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
