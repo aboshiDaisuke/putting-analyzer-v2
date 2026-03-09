@@ -54,14 +54,16 @@ export function ScreenContainer({
         "bg-background",
         containerClassName
       )}
+      pointerEvents="box-none"
       {...props}
     >
       <SafeAreaView
         edges={edges}
         className={cn("flex-1", safeAreaClassName)}
         style={style}
+        pointerEvents="box-none"
       >
-        <View className={cn("flex-1", className)}>{children}</View>
+        <View className={cn("flex-1", className)} pointerEvents="box-none">{children}</View>
       </SafeAreaView>
     </View>
   );
