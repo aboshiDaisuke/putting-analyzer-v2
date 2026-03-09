@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,37 +22,39 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert("入力エラー", "メールアドレスとパスワードを入力してください");
+      setError("メールアドレスとパスワードを入力してください");
       return;
     }
     setLoading(true);
     setMessage(null);
+    setError(null);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { error: err } = await supabase.auth.signUp({
           email: email.trim(),
           password,
         });
-        if (error) {
-          Alert.alert("エラー", error.message);
+        if (err) {
+          setError(err.message);
         } else {
           setMessage("確認メールを送信しました。メールを確認してアカウントを有効化してください。");
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { error: err } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
         });
-        if (error) {
-          Alert.alert("ログインエラー", error.message);
+        if (err) {
+          setError(err.message);
         }
         // On success, useAuth in _layout.tsx will redirect automatically
       }
     } catch (e) {
-      Alert.alert("エラー", "ネットワークエラーが発生しました");
+      setError("ネットワークエラーが発生しました");
     } finally {
       setLoading(false);
     }
@@ -61,18 +62,19 @@ export default function LoginScreen() {
 
   const handleGoogleLogin = async () => {
     setLoading(true);
+    setError(null);
     try {
       const redirectTo =
         typeof window !== "undefined"
           ? `${window.location.origin}/oauth/callback`
           : "putting-analyzer-v2://oauth/callback";
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error: err } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo },
       });
-      if (error) Alert.alert("エラー", error.message);
+      if (err) setError(err.message);
     } catch {
-      Alert.alert("エラー", "Googleログインに失敗しました");
+      setError("Googleログインに失敗しました");
     } finally {
       setLoading(false);
     }
@@ -197,7 +199,21 @@ export default function LoginScreen() {
               }}
             />
 
-            {/* Message */}
+            {/* Error */}
+            {error && (
+              <View
+                style={{
+                  backgroundColor: "#fee2e2",
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <Text style={{ color: "#991b1b", fontSize: 13 }}>{error}</Text>
+              </View>
+            )}
+
+            {/* Success Message */}
             {message && (
               <View
                 style={{
