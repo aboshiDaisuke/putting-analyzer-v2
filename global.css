@@ -1,3 +1,14 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Fix 300ms tap delay and tap highlight on mobile browsers */
+* {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Ensure interactive elements show pointer cursor on web */
+button, [role="button"], a {
+  cursor: pointer;
+}
