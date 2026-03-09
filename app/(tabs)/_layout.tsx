@@ -17,7 +17,7 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
         headerShown: false,
-        tabBarButton: HapticTab,
+        tabBarButton: Platform.OS === "web" ? undefined : HapticTab,
         tabBarStyle: {
           paddingTop: 8,
           paddingBottom: bottomPadding,
