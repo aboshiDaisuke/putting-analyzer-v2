@@ -46,12 +46,12 @@ export default function HomeScreen() {
   return (
     <ScreenContainer>
       <ScrollView
-        contentContainerStyle={{ flexGrow: 1 }}
+        contentContainerStyle={{ paddingBottom: 16 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <View className="flex-1 p-4 gap-6">
+        <View className="p-4 gap-6">
           {/* ヘッダー */}
           <View className="flex-row items-center justify-between">
             <View>

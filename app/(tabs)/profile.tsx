@@ -36,6 +36,7 @@ export default function ProfileScreen() {
   const [editName, setEditName] = useState("");
   const [editHandicap, setEditHandicap] = useState("");
   const [editStrideLength, setEditStrideLength] = useState("");
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const loadData = useCallback(async () => {
     const [profileData, puttersData, coursesData] = await Promise.all([
@@ -88,16 +89,8 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = async () => {
-    Alert.alert("ログアウト", "ログアウトしますか？", [
-      { text: "キャンセル", style: "cancel" },
-      {
-        text: "ログアウト",
-        style: "destructive",
-        onPress: async () => {
-          await supabase.auth.signOut();
-        },
-      },
-    ]);
+    await supabase.auth.signOut();
+    setShowLogoutConfirm(false);
   };
 
   const handleDeleteCourse = (course: GolfCourse) => {
@@ -328,16 +321,39 @@ export default function ProfileScreen() {
               )}
             </View>
             {/* ログアウト */}
-            <TouchableOpacity
-              onPress={handleLogout}
-              className="bg-surface rounded-2xl p-4 border border-border flex-row items-center justify-center gap-2"
-              activeOpacity={0.7}
-            >
-              <IconSymbol name="rectangle.portrait.and.arrow.right" size={20} color={colors.error} />
-              <Text style={{ color: colors.error }} className="font-semibold text-base">
-                ログアウト
-              </Text>
-            </TouchableOpacity>
+            {showLogoutConfirm ? (
+              <View className="bg-surface rounded-2xl p-4 border border-border gap-3">
+                <Text className="text-foreground font-semibold text-center">ログアウトしますか？</Text>
+                <View className="flex-row gap-3">
+                  <TouchableOpacity
+                    onPress={() => setShowLogoutConfirm(false)}
+                    className="flex-1 border border-border rounded-xl py-3 items-center"
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-foreground font-medium">キャンセル</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleLogout}
+                    className="flex-1 rounded-xl py-3 items-center"
+                    style={{ backgroundColor: colors.error }}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-white font-medium">ログアウト</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={() => setShowLogoutConfirm(true)}
+                className="bg-surface rounded-2xl p-4 border border-border flex-row items-center justify-center gap-2"
+                activeOpacity={0.7}
+              >
+                <IconSymbol name="rectangle.portrait.and.arrow.right" size={20} color={colors.error} />
+                <Text style={{ color: colors.error }} className="font-semibold text-base">
+                  ログアウト
+                </Text>
+              </TouchableOpacity>
+            )}
 
           </View>
         </ScrollView>
