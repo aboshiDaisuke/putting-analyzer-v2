@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ScrollView, Text, View, TouchableOpacity, Alert } from "react-native";
+import { ScrollView, Text, View, TouchableOpacity } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -15,39 +15,52 @@ export default function RoundDetailScreen() {
   const colors = useColors();
 
   const [round, setRound] = useState<Round | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     const loadRound = async () => {
       if (!id) return;
-      const data = await getRound(id);
-      setRound(data);
+      setLoadError(null);
+      try {
+        const data = await getRound(id);
+        if (data) {
+          setRound(data);
+        } else {
+          setLoadError("ラウンドデータが見つかりません");
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error("[round-detail] loadRound error:", err);
+        setLoadError(`データの読み込みに失敗しました。\n[${errMsg}]`);
+      }
     };
     loadRound();
   }, [id]);
 
-  const handleDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!round) return;
-    Alert.alert(
-      "ラウンドを削除",
-      "このラウンドデータを削除しますか？",
-      [
-        { text: "キャンセル", style: "cancel" },
-        {
-          text: "削除",
-          style: "destructive",
-          onPress: async () => {
-            await deleteRound(round.id);
-            router.back();
-          },
-        },
-      ]
-    );
+    await deleteRound(round.id);
+    setShowDeleteConfirm(false);
+    router.back();
   };
 
   if (!round) {
     return (
       <ScreenContainer className="items-center justify-center">
-        <Text className="text-muted">読み込み中...</Text>
+        {loadError ? (
+          <View className="items-center gap-4 px-8">
+            <Text style={{ color: "#991b1b", textAlign: "center", fontSize: 14 }}>{loadError}</Text>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: "#166534", borderRadius: 8 }}
+            >
+              <Text style={{ color: "white", fontWeight: "600" }}>戻る</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <Text className="text-muted">読み込み中...</Text>
+        )}
       </ScreenContainer>
     );
   }
@@ -66,10 +79,33 @@ export default function RoundDetailScreen() {
         <Text className="text-lg font-semibold text-foreground">
           ラウンド詳細
         </Text>
-        <TouchableOpacity onPress={handleDelete}>
+        <TouchableOpacity onPress={() => setShowDeleteConfirm(true)}>
           <IconSymbol name="trash.fill" size={24} color={colors.error} />
         </TouchableOpacity>
       </View>
+
+      {/* 削除確認 */}
+      {showDeleteConfirm && (
+        <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, margin: 16 }}>
+          <Text style={{ color: "#991b1b", fontWeight: "600", marginBottom: 8 }}>
+            このラウンドデータを削除しますか？
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => setShowDeleteConfirm(false)}
+              style={{ flex: 1, padding: 10, backgroundColor: "#6b7280", borderRadius: 6, alignItems: "center" }}
+            >
+              <Text style={{ color: "white", fontWeight: "600" }}>キャンセル</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleConfirmDelete}
+              style={{ flex: 1, padding: 10, backgroundColor: "#dc2626", borderRadius: 6, alignItems: "center" }}
+            >
+              <Text style={{ color: "white", fontWeight: "600" }}>削除</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
         {/* 基本情報 */}

@@ -77,6 +77,7 @@ export default function HoleInputScreen() {
   const [round, setRound] = useState<Round | null>(null);
   const [currentHole, setCurrentHole] = useState(1);
   const [strideLength, setStrideLength] = useState(0.7);
+  const [retryCount, setRetryCount] = useState(0);
 
   // 現在のホールデータ
   const [scoreResult, setScoreResult] = useState<ScoreResult>("par");
@@ -119,12 +120,13 @@ export default function HoleInputScreen() {
           setStrideLength(profile.strideLength);
         }
       } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
         console.error("[hole-input] loadData error:", err);
-        setLoadError("データの読み込みに失敗しました。もう一度お試しください。");
+        setLoadError(`データの読み込みに失敗しました。\n[${errMsg}]`);
       }
     };
     loadData();
-  }, [id]);
+  }, [id, retryCount]);
 
   const loadHoleData = (roundData: Round, holeNum: number) => {
     const hole = roundData.holes.find((h) => h.holeNumber === holeNum);
@@ -267,12 +269,20 @@ export default function HoleInputScreen() {
         {loadError ? (
           <View className="items-center gap-4 px-8">
             <Text style={{ color: "#991b1b", textAlign: "center", fontSize: 14 }}>{loadError}</Text>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: "#166534", borderRadius: 8 }}
-            >
-              <Text style={{ color: "white", fontWeight: "600" }}>戻る</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => { setRound(null); setLoadError(null); setRetryCount(c => c + 1); }}
+                style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: "#2563eb", borderRadius: 8 }}
+              >
+                <Text style={{ color: "white", fontWeight: "600" }}>再試行</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.back()}
+                style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: "#166534", borderRadius: 8 }}
+              >
+                <Text style={{ color: "white", fontWeight: "600" }}>戻る</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <Text className="text-muted">読み込み中...</Text>
