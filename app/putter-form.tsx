@@ -7,7 +7,6 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 
@@ -34,6 +33,7 @@ export default function PutterFormScreen() {
   const [startDate, setStartDate] = useState("");
   const [ranking, setRanking] = useState<PutterRanking>("ace");
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -57,13 +57,15 @@ export default function PutterFormScreen() {
   };
 
   const handleSave = async () => {
+    setError(null);
+
     // バリデーション
     if (!brandName.trim()) {
-      Alert.alert("入力エラー", "ブランド名を入力してください");
+      setError("ブランド名を入力してください");
       return;
     }
     if (!productName.trim()) {
-      Alert.alert("入力エラー", "商品名を入力してください");
+      setError("商品名を入力してください");
       return;
     }
 
@@ -84,18 +86,13 @@ export default function PutterFormScreen() {
     try {
       if (isEditing && id) {
         await updatePutter(id, putterData);
-        Alert.alert("完了", "パターを更新しました", [
-          { text: "OK", onPress: () => router.back() },
-        ]);
       } else {
         await savePutter(putterData);
-        Alert.alert("完了", "パターを登録しました", [
-          { text: "OK", onPress: () => router.back() },
-        ]);
       }
-    } catch (error) {
-      console.error("Save error:", error);
-      Alert.alert("エラー", "保存に失敗しました。もう一度お試しください。");
+      router.back();
+    } catch (err) {
+      console.error("Save error:", err);
+      setError("保存に失敗しました。もう一度お試しください。");
     } finally {
       setIsSaving(false);
     }
@@ -135,6 +132,13 @@ export default function PutterFormScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View className="gap-5">
+            {/* エラー表示 */}
+            {error && (
+              <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginBottom: 16 }}>
+                <Text style={{ color: "#991b1b", fontSize: 13 }}>{error}</Text>
+              </View>
+            )}
+
             {/* 必須項目セクション */}
             <View className="bg-surface rounded-2xl p-4 border border-border">
               <Text className="text-base font-semibold text-foreground mb-4">

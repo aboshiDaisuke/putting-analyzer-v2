@@ -5,7 +5,6 @@ import {
   View,
   TouchableOpacity,
   TextInput,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -95,6 +94,10 @@ export default function HoleInputScreen() {
   const [lineUD, setLineUD] = useState<SlopeUpDown>("flat");
   const [lineLR, setLineLR] = useState<SlopeLeftRight>("straight");
   const [mental, setMental] = useState<MentalState>(3);
+
+  // ラウンド終了確認UI
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -200,6 +203,7 @@ export default function HoleInputScreen() {
   const saveHoleAndNavigate = async (nextHole: number | "finish") => {
     if (!round) return;
 
+    setSaveError(null);
     const savedPutts = saveCurrentPutt();
     const totalPutts = savedPutts.length;
 
@@ -235,15 +239,17 @@ export default function HoleInputScreen() {
       }
     } catch (error) {
       console.error("[hole-input] saveHoleAndNavigate error:", error);
-      Alert.alert("エラー", "データの保存に失敗しました。もう一度お試しください。");
+      setSaveError("データの保存に失敗しました。もう一度お試しください。");
     }
   };
 
   const handleFinish = () => {
-    Alert.alert("ラウンド終了", "データを保存してラウンドを終了しますか？", [
-      { text: "キャンセル", style: "cancel" },
-      { text: "終了", onPress: () => saveHoleAndNavigate("finish") },
-    ]);
+    setShowFinishConfirm(true);
+  };
+
+  const handleConfirmFinish = () => {
+    setShowFinishConfirm(false);
+    saveHoleAndNavigate("finish");
   };
 
   if (!round) {
@@ -302,6 +308,34 @@ export default function HoleInputScreen() {
         </ScrollView>
 
         <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
+          {/* ラウンド終了確認UI */}
+          {showFinishConfirm && (
+            <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginBottom: 16 }}>
+              <Text style={{ color: "#991b1b", fontSize: 13, marginBottom: 8 }}>データを保存してラウンドを終了しますか？</Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => setShowFinishConfirm(false)}
+                  style={{ flex: 1, padding: 8, borderWidth: 1, borderColor: "#d1d5db", borderRadius: 6, alignItems: "center" }}
+                >
+                  <Text>キャンセル</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleConfirmFinish}
+                  style={{ flex: 1, padding: 8, backgroundColor: "#dc2626", borderRadius: 6, alignItems: "center" }}
+                >
+                  <Text style={{ color: "white" }}>終了</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* 保存エラー表示 */}
+          {saveError && (
+            <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginBottom: 16 }}>
+              <Text style={{ color: "#991b1b", fontSize: 13 }}>{saveError}</Text>
+            </View>
+          )}
+
           {/* スコア結果 (Result) */}
           <View className="mb-4">
             <Text className="text-muted text-sm mb-2 font-medium">Result</Text>

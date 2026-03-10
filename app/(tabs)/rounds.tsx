@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { FlatList, Text, View, TouchableOpacity, Alert } from "react-native";
+import { FlatList, Text, View, TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 
@@ -15,6 +15,7 @@ export default function RoundsScreen() {
   const colors = useColors();
   const [rounds, setRounds] = useState<Round[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   const loadRounds = useCallback(async () => {
     const data = await getRounds();
@@ -33,22 +34,10 @@ export default function RoundsScreen() {
     setRefreshing(false);
   }, [loadRounds]);
 
-  const handleDelete = useCallback((round: Round) => {
-    Alert.alert(
-      "ラウンドを削除",
-      `${round.courseName}のラウンドデータを削除しますか？`,
-      [
-        { text: "キャンセル", style: "cancel" },
-        {
-          text: "削除",
-          style: "destructive",
-          onPress: async () => {
-            await deleteRound(round.id);
-            loadRounds();
-          },
-        },
-      ]
-    );
+  const handleConfirmDelete = useCallback(async (roundId: string) => {
+    await deleteRound(roundId);
+    setShowDeleteConfirm(null);
+    loadRounds();
   }, [loadRounds]);
 
   const renderItem = ({ item }: { item: Round }) => (
@@ -84,7 +73,7 @@ export default function RoundsScreen() {
         </Text>
         <View className="flex-row items-center gap-3">
           <TouchableOpacity
-            onPress={() => handleDelete(item)}
+            onPress={() => setShowDeleteConfirm(showDeleteConfirm === item.id ? null : item.id)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <IconSymbol name="trash.fill" size={20} color={colors.error} />
@@ -92,6 +81,25 @@ export default function RoundsScreen() {
           <IconSymbol name="chevron.right" size={20} color={colors.muted} />
         </View>
       </View>
+      {showDeleteConfirm === item.id && (
+        <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginTop: 8 }}>
+          <Text style={{ color: "#991b1b", fontSize: 13, marginBottom: 8 }}>削除しますか？</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => setShowDeleteConfirm(null)}
+              style={{ flex: 1, padding: 8, borderWidth: 1, borderColor: "#d1d5db", borderRadius: 6, alignItems: "center" }}
+            >
+              <Text>キャンセル</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => handleConfirmDelete(item.id)}
+              style={{ flex: 1, padding: 8, backgroundColor: "#dc2626", borderRadius: 6, alignItems: "center" }}
+            >
+              <Text style={{ color: "white" }}>削除</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </TouchableOpacity>
   );
 

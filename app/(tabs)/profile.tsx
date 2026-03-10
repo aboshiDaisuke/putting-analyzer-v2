@@ -5,7 +5,6 @@ import {
   View,
   TouchableOpacity,
   TextInput,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -37,6 +36,8 @@ export default function ProfileScreen() {
   const [editHandicap, setEditHandicap] = useState("");
   const [editStrideLength, setEditStrideLength] = useState("");
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showDeletePutterConfirm, setShowDeletePutterConfirm] = useState<string | null>(null);
+  const [showDeleteCourseConfirm, setShowDeleteCourseConfirm] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     const [profileData, puttersData, coursesData] = await Promise.all([
@@ -70,22 +71,10 @@ export default function ProfileScreen() {
     setIsEditing(false);
   };
 
-  const handleDeletePutter = (putter: Putter) => {
-    Alert.alert(
-      "パターを削除",
-      `${putter.brandName} ${putter.productName}を削除しますか？`,
-      [
-        { text: "キャンセル", style: "cancel" },
-        {
-          text: "削除",
-          style: "destructive",
-          onPress: async () => {
-            await deletePutter(putter.id);
-            loadData();
-          },
-        },
-      ]
-    );
+  const handleConfirmDeletePutter = async (putterId: string) => {
+    await deletePutter(putterId);
+    setShowDeletePutterConfirm(null);
+    loadData();
   };
 
   const handleLogout = async () => {
@@ -93,18 +82,10 @@ export default function ProfileScreen() {
     setShowLogoutConfirm(false);
   };
 
-  const handleDeleteCourse = (course: GolfCourse) => {
-    Alert.alert("コースを削除", `${course.name}を削除しますか？`, [
-      { text: "キャンセル", style: "cancel" },
-      {
-        text: "削除",
-        style: "destructive",
-        onPress: async () => {
-          await deleteCourse(course.id);
-          loadData();
-        },
-      },
-    ]);
+  const handleConfirmDeleteCourse = async (courseId: string) => {
+    await deleteCourse(courseId);
+    setShowDeleteCourseConfirm(null);
+    loadData();
   };
 
   return (
@@ -213,49 +194,73 @@ export default function ProfileScreen() {
               {putters.length > 0 ? (
                 <View className="gap-3">
                   {putters.map((putter) => (
-                    <View
-                      key={putter.id}
-                      className="flex-row items-center justify-between py-3 border-b border-border"
-                    >
-                      <View className="flex-1">
-                        <View className="flex-row items-center gap-2 flex-wrap">
-                          <Text className="text-foreground font-medium">
-                            {putter.brandName} {putter.productName}
-                          </Text>
-                          <View className="bg-primary/20 px-2 py-0.5 rounded">
-                            <Text className="text-primary text-xs font-medium">
-                              {LABELS.putterRanking[putter.ranking]}
+                    <View key={putter.id}>
+                      <View
+                        className="flex-row items-center justify-between py-3 border-b border-border"
+                      >
+                        <View className="flex-1">
+                          <View className="flex-row items-center gap-2 flex-wrap">
+                            <Text className="text-foreground font-medium">
+                              {putter.brandName} {putter.productName}
                             </Text>
+                            <View className="bg-primary/20 px-2 py-0.5 rounded">
+                              <Text className="text-primary text-xs font-medium">
+                                {LABELS.putterRanking[putter.ranking]}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text className="text-muted text-sm mt-1">
+                            {putter.length}" / {putter.weight}g
+                          </Text>
+                        </View>
+                        <View className="flex-row gap-3 ml-2">
+                          <TouchableOpacity
+                            onPress={() =>
+                              router.push(`/putter-form?id=${putter.id}` as any)
+                            }
+                            className="p-2"
+                          >
+                            <IconSymbol
+                              name="pencil"
+                              size={20}
+                              color={colors.primary}
+                            />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() =>
+                              setShowDeletePutterConfirm(
+                                showDeletePutterConfirm === putter.id ? null : putter.id
+                              )
+                            }
+                            className="p-2"
+                          >
+                            <IconSymbol
+                              name="trash.fill"
+                              size={20}
+                              color={colors.error}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      {showDeletePutterConfirm === putter.id && (
+                        <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginTop: 8 }}>
+                          <Text style={{ color: "#991b1b", fontSize: 13, marginBottom: 8 }}>削除しますか？</Text>
+                          <View style={{ flexDirection: "row", gap: 8 }}>
+                            <TouchableOpacity
+                              onPress={() => setShowDeletePutterConfirm(null)}
+                              style={{ flex: 1, padding: 8, borderWidth: 1, borderColor: "#d1d5db", borderRadius: 6, alignItems: "center" }}
+                            >
+                              <Text>キャンセル</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleConfirmDeletePutter(putter.id)}
+                              style={{ flex: 1, padding: 8, backgroundColor: "#dc2626", borderRadius: 6, alignItems: "center" }}
+                            >
+                              <Text style={{ color: "white" }}>削除</Text>
+                            </TouchableOpacity>
                           </View>
                         </View>
-                        <Text className="text-muted text-sm mt-1">
-                          {putter.length}" / {putter.weight}g
-                        </Text>
-                      </View>
-                      <View className="flex-row gap-3 ml-2">
-                        <TouchableOpacity
-                          onPress={() =>
-                            router.push(`/putter-form?id=${putter.id}` as any)
-                          }
-                          className="p-2"
-                        >
-                          <IconSymbol
-                            name="pencil"
-                            size={20}
-                            color={colors.primary}
-                          />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => handleDeletePutter(putter)}
-                          className="p-2"
-                        >
-                          <IconSymbol
-                            name="trash.fill"
-                            size={20}
-                            color={colors.error}
-                          />
-                        </TouchableOpacity>
-                      </View>
+                      )}
                     </View>
                   ))}
                 </View>
@@ -292,25 +297,51 @@ export default function ProfileScreen() {
               {courses.length > 0 ? (
                 <View className="gap-2">
                   {courses.map((course) => (
-                    <View
-                      key={course.id}
-                      className="flex-row items-center justify-between py-2 border-b border-border"
-                    >
-                      <View className="flex-1">
-                        <Text className="text-foreground">{course.name}</Text>
-                        {course.greens.length > 0 && (
-                          <Text className="text-muted text-sm">
-                            グリーン: {course.greens.join(", ")}
-                          </Text>
-                        )}
+                    <View key={course.id}>
+                      <View
+                        className="flex-row items-center justify-between py-2 border-b border-border"
+                      >
+                        <View className="flex-1">
+                          <Text className="text-foreground">{course.name}</Text>
+                          {course.greens.length > 0 && (
+                            <Text className="text-muted text-sm">
+                              グリーン: {course.greens.join(", ")}
+                            </Text>
+                          )}
+                        </View>
+                        <TouchableOpacity
+                          onPress={() =>
+                            setShowDeleteCourseConfirm(
+                              showDeleteCourseConfirm === course.id ? null : course.id
+                            )
+                          }
+                        >
+                          <IconSymbol
+                            name="trash.fill"
+                            size={20}
+                            color={colors.error}
+                          />
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity onPress={() => handleDeleteCourse(course)}>
-                        <IconSymbol
-                          name="trash.fill"
-                          size={20}
-                          color={colors.error}
-                        />
-                      </TouchableOpacity>
+                      {showDeleteCourseConfirm === course.id && (
+                        <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginTop: 8 }}>
+                          <Text style={{ color: "#991b1b", fontSize: 13, marginBottom: 8 }}>削除しますか？</Text>
+                          <View style={{ flexDirection: "row", gap: 8 }}>
+                            <TouchableOpacity
+                              onPress={() => setShowDeleteCourseConfirm(null)}
+                              style={{ flex: 1, padding: 8, borderWidth: 1, borderColor: "#d1d5db", borderRadius: 6, alignItems: "center" }}
+                            >
+                              <Text>キャンセル</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleConfirmDeleteCourse(course.id)}
+                              style={{ flex: 1, padding: 8, backgroundColor: "#dc2626", borderRadius: 6, alignItems: "center" }}
+                            >
+                              <Text style={{ color: "white" }}>削除</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
                     </View>
                   ))}
                 </View>
@@ -320,6 +351,7 @@ export default function ProfileScreen() {
                 </Text>
               )}
             </View>
+
             {/* ログアウト */}
             {showLogoutConfirm ? (
               <View className="bg-surface rounded-2xl p-4 border border-border gap-3">

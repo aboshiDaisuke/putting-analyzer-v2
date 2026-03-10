@@ -7,7 +7,6 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -24,6 +23,7 @@ export default function CourseFormScreen() {
   const [location, setLocation] = useState("");
   const [greens, setGreens] = useState<string[]>(["A"]);
   const [newGreen, setNewGreen] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const addGreen = () => {
     if (newGreen.trim() && !greens.includes(newGreen.trim())) {
@@ -37,8 +37,10 @@ export default function CourseFormScreen() {
   };
 
   const handleSave = async () => {
+    setError(null);
+
     if (!name.trim()) {
-      Alert.alert("エラー", "コース名は必須です");
+      setError("コース名は必須です");
       return;
     }
 
@@ -49,8 +51,8 @@ export default function CourseFormScreen() {
         greens,
       });
       router.back();
-    } catch (error) {
-      Alert.alert("エラー", "保存に失敗しました");
+    } catch (err) {
+      setError("保存に失敗しました");
     }
   };
 
@@ -75,6 +77,13 @@ export default function CourseFormScreen() {
 
         <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
           <View className="gap-4">
+            {/* エラー表示 */}
+            {error && (
+              <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginBottom: 16 }}>
+                <Text style={{ color: "#991b1b", fontSize: 13 }}>{error}</Text>
+              </View>
+            )}
+
             <View>
               <Text className="text-muted text-sm mb-2">コース名 *</Text>
               <TextInput
