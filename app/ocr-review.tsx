@@ -15,7 +15,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import type { OcrHoleData, OcrPuttData } from "@/lib/ocr-utils";
 import { convertOcrBatchToHoles } from "@/lib/ocr-utils";
-import { saveRound, getUserProfile } from "@/lib/storage";
+import { saveRound, saveHolesForRound, updateRound, getUserProfile } from "@/lib/storage";
 import type { Round } from "@/lib/types";
 
 // カード表記のラベル
@@ -87,7 +87,7 @@ function MiniSelect({
 export default function OcrReviewScreen() {
   const router = useRouter();
   const colors = useColors();
-  const { data } = useLocalSearchParams<{ data: string }>();
+  const { data, roundId } = useLocalSearchParams<{ data: string; roundId?: string }>();
 
   const [ocrResults, setOcrResults] = useState<OcrHoleData[]>([]);
   const [expandedHole, setExpandedHole] = useState<number | null>(null);
@@ -144,56 +144,74 @@ export default function OcrReviewScreen() {
         return;
       }
 
-      const firstResult = ocrResults[0];
-      const dateStr = firstResult.date || "";
-      const courseName = firstResult.course || "未設定";
-
-      const now = new Date();
-      let roundDate = now.toISOString();
-      if (dateStr) {
-        const parts = dateStr.split("/");
-        if (parts.length === 2) {
-          const month = parseInt(parts[0], 10);
-          const day = parseInt(parts[1], 10);
-          if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-            roundDate = new Date(now.getFullYear(), month - 1, day).toISOString();
-          }
-        }
-      }
-
       const totalPutts = holes.reduce((sum, h) => sum + h.totalPutts, 0);
 
-      const newRound: Omit<Round, "id" | "createdAt" | "updatedAt"> = {
-        date: roundDate,
-        weather: "sunny",
-        windSpeed: "calm",
-        courseId: "",
-        courseName,
-        frontNineGreen: "A",
-        backNineGreen: "A",
-        roundType: "private",
-        competitionFormat: "stroke",
-        grassType: "bent",
-        stimpmeter: 9.0,
-        greenCondition: "good",
-        putterId: "",
-        putterName: "",
-        holes,
-        totalPutts,
-      };
+      if (roundId) {
+        // ─── 既存ラウンドにホールデータを保存 ───────────────────────────
+        await saveHolesForRound(roundId, holes);
+        await updateRound(roundId, { totalPutts });
 
-      await saveRound(newRound);
+        Alert.alert(
+          "取り込み完了",
+          `${holes.length}ホール分のデータをラウンドに取り込みました。`,
+          [
+            {
+              text: "ラウンド詳細へ",
+              onPress: () => router.replace(`/round/${roundId}` as any),
+            },
+          ]
+        );
+      } else {
+        // ─── 後方互換：新規ラウンドとして保存 ──────────────────────────
+        const firstResult = ocrResults[0];
+        const dateStr = firstResult.date || "";
+        const courseName = firstResult.course || "未設定";
 
-      Alert.alert(
-        "保存完了",
-        `${holes.length}ホール分のデータを保存しました。\n\nラウンド詳細画面で環境情報を追加設定できます。`,
-        [
-          {
-            text: "ラウンド一覧へ",
-            onPress: () => router.replace("/(tabs)/rounds" as any),
-          },
-        ]
-      );
+        const now = new Date();
+        let roundDate = now.toISOString();
+        if (dateStr) {
+          const parts = dateStr.split("/");
+          if (parts.length === 2) {
+            const month = parseInt(parts[0], 10);
+            const day = parseInt(parts[1], 10);
+            if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+              roundDate = new Date(now.getFullYear(), month - 1, day).toISOString();
+            }
+          }
+        }
+
+        const newRound: Omit<Round, "id" | "createdAt" | "updatedAt"> = {
+          date: roundDate,
+          weather: "sunny",
+          windSpeed: "calm",
+          courseId: "",
+          courseName,
+          frontNineGreen: "A",
+          backNineGreen: "A",
+          roundType: "private",
+          competitionFormat: "stroke",
+          grassType: "bent",
+          stimpmeter: 9.0,
+          greenCondition: "good",
+          putterId: "",
+          putterName: "",
+          holes,
+          totalPutts,
+        };
+
+        await saveRound(newRound);
+
+        Alert.alert(
+          "保存完了",
+          `${holes.length}ホール分のデータを保存しました。\n\nラウンド詳細画面で環境情報を追加設定できます。`,
+          [
+            {
+              text: "ラウンド一覧へ",
+              onPress: () => router.replace("/(tabs)/rounds" as any),
+            },
+          ]
+        );
+      }
     } catch (error) {
       console.error("Save error:", error);
       Alert.alert("エラー", "保存に失敗しました");

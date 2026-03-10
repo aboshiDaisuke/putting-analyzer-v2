@@ -100,25 +100,14 @@ export default function HomeScreen() {
           </View>
 
           {/* アクションボタン */}
-          <View className="flex-row gap-3">
-            <TouchableOpacity
-              className="flex-1 bg-primary rounded-xl p-4 items-center"
-              style={{ opacity: 1 }}
-              onPress={() => router.push("/new-round" as any)}
-              activeOpacity={0.8}
-            >
-              <IconSymbol name="plus" size={24} color="#FFFFFF" />
-              <Text className="text-white font-semibold mt-2">新規ラウンド</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="flex-1 bg-surface rounded-xl p-4 items-center border border-border"
-              onPress={() => router.push("/scan-card" as any)}
-              activeOpacity={0.8}
-            >
-              <IconSymbol name="camera.fill" size={24} color={colors.foreground} />
-              <Text className="text-foreground font-semibold mt-2">カード撮影</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            className="bg-primary rounded-xl p-4 items-center"
+            onPress={() => router.push("/new-round" as any)}
+            activeOpacity={0.8}
+          >
+            <IconSymbol name="plus" size={24} color="#FFFFFF" />
+            <Text className="text-white font-semibold mt-2">新規ラウンド</Text>
+          </TouchableOpacity>
 
           {/* 最近のラウンド */}
           <View>

@@ -307,9 +307,16 @@ export default function HoleInputScreen() {
           <Text className="text-lg font-semibold text-foreground">
             {round.courseName}
           </Text>
-          <TouchableOpacity onPress={handleFinish}>
-            <Text className="text-primary font-medium">終了</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+            <TouchableOpacity
+              onPress={() => router.push(`/scan-card?roundId=${round.id}` as any)}
+            >
+              <IconSymbol name="camera.fill" size={22} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleFinish}>
+              <Text className="text-primary font-medium">終了</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ホールナビゲーター */}

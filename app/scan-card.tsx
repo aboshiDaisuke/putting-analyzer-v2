@@ -9,7 +9,7 @@ import {
   ScrollView,
   Image,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -28,6 +28,7 @@ interface CapturedImage {
 
 export default function ScanCardScreen() {
   const router = useRouter();
+  const { roundId } = useLocalSearchParams<{ roundId?: string }>();
   const colors = useColors();
   const [permission, requestPermission] = useCameraPermissions();
   const [step, setStep] = useState<ScanStep>("capture");
@@ -156,10 +157,13 @@ export default function ScanCardScreen() {
     // 結果画面に遷移
     const validResults = results.filter((r) => !r.error);
     if (validResults.length > 0) {
-      // OCR結果をパラメータとして渡す
+      // OCR結果をパラメータとして渡す（roundIdがあれば一緒に渡す）
       router.push({
         pathname: "/ocr-review" as any,
-        params: { data: JSON.stringify(validResults) },
+        params: {
+          data: JSON.stringify(validResults),
+          ...(roundId ? { roundId } : {}),
+        },
       });
     } else {
       Alert.alert(
