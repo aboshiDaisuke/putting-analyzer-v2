@@ -7,7 +7,6 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -36,6 +35,8 @@ export default function NewRoundScreen() {
   const [step, setStep] = useState(1);
   const [putters, setPutters] = useState<Putter[]>([]);
   const [courses, setCourses] = useState<GolfCourse[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Step 1: 日時・天気
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
@@ -87,12 +88,13 @@ export default function NewRoundScreen() {
   };
 
   const handleCreateRound = async () => {
+    setError(null);
     if (!courseName) {
-      Alert.alert("エラー", "コース名を入力してください");
+      setError("コース名を入力してください");
       return;
     }
     if (!selectedPutterId) {
-      Alert.alert("エラー", "使用パターを選択してください");
+      setError("使用パターを選択してください");
       return;
     }
 
@@ -130,11 +132,13 @@ export default function NewRoundScreen() {
       totalPutts: 36, // デフォルト値（後で更新）
     };
 
+    setIsSubmitting(true);
     try {
       const newRound = await saveRound(roundData);
       router.replace(`/hole-input/${newRound.id}` as any);
-    } catch (error) {
-      Alert.alert("エラー", "ラウンドの作成に失敗しました");
+    } catch (err) {
+      setError("ラウンドの作成に失敗しました。もう一度お試しください。");
+      setIsSubmitting(false);
     }
   };
 
@@ -516,28 +520,38 @@ export default function NewRoundScreen() {
           {step === 4 && renderStep4()}
         </ScrollView>
 
+        {/* エラー表示 */}
+        {error && (
+          <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginHorizontal: 16, marginBottom: 8 }}>
+            <Text style={{ color: "#991b1b", fontSize: 13 }}>{error}</Text>
+          </View>
+        )}
+
         {/* ナビゲーションボタン */}
         <View className="flex-row gap-3 p-4 border-t border-border">
           {step > 1 && (
             <TouchableOpacity
               className="flex-1 py-3 rounded-xl border border-border items-center"
-              onPress={() => setStep(step - 1)}
+              onPress={() => { setError(null); setStep(step - 1); }}
             >
               <Text className="text-foreground font-medium">戻る</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
             className="flex-1 py-3 rounded-xl bg-primary items-center"
+            disabled={isSubmitting}
             onPress={() => {
               if (step < 4) {
+                setError(null);
                 setStep(step + 1);
               } else {
                 handleCreateRound();
               }
             }}
+            style={{ opacity: isSubmitting ? 0.6 : 1 }}
           >
             <Text className="text-white font-medium">
-              {step < 4 ? "次へ" : "ラウンド開始"}
+              {isSubmitting ? "作成中..." : step < 4 ? "次へ" : "ラウンド開始"}
             </Text>
           </TouchableOpacity>
         </View>
