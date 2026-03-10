@@ -307,16 +307,9 @@ export default function HoleInputScreen() {
           <Text className="text-lg font-semibold text-foreground">
             {round.courseName}
           </Text>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <TouchableOpacity
-              onPress={() => router.push(`/scan-card?roundId=${round.id}` as any)}
-            >
-              <IconSymbol name="camera.fill" size={22} color={colors.primary} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleFinish}>
-              <Text className="text-primary font-medium">終了</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity onPress={handleFinish}>
+            <Text className="text-primary font-medium">終了</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ホールナビゲーター */}
@@ -344,6 +337,27 @@ export default function HoleInputScreen() {
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        {/* スキャンバー */}
+        <TouchableOpacity
+          onPress={() => router.push(`/scan-card?roundId=${round.id}` as any)}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            paddingVertical: 8,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+            backgroundColor: colors.surface,
+            gap: 6,
+          }}
+          activeOpacity={0.7}
+        >
+          <IconSymbol name="camera.fill" size={14} color={colors.primary} />
+          <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "500" }}>
+            スキャンでホールデータを取り込む
+          </Text>
+        </TouchableOpacity>
 
         <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
           {/* ラウンド終了確認UI */}
