@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -377,6 +377,14 @@ export async function getPuttsByHole(holeId: number) {
   if (!db) return [];
 
   return db.select().from(putts).where(eq(putts.holeId, holeId));
+}
+
+/** Fetch all putts for multiple holes in a single query (avoids N+1). */
+export async function getPuttsByHoles(holeIds: number[]) {
+  const db = await getDb();
+  if (!db || holeIds.length === 0) return [];
+
+  return db.select().from(putts).where(inArray(putts.holeId, holeIds));
 }
 
 /**

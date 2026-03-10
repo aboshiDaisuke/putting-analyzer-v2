@@ -13,7 +13,7 @@ import {
   getHolesByRound,
   getPutter,
   getPutters,
-  getPuttsByHole,
+  getPuttsByHoles,
   getRound,
   getRounds,
   getUserProfile,
@@ -268,12 +268,13 @@ export const roundsRouter = router({
 
       const holesData = await getHolesByRound(round.id);
 
-      const holesWithPutts = await Promise.all(
-        holesData.map(async (hole) => {
-          const puttsData = await getPuttsByHole(hole.id);
-          return { ...hole, putts: puttsData };
-        }),
-      );
+      // Batch-fetch all putts in one query instead of N separate queries
+      const holeIds = holesData.map((h) => h.id);
+      const allPutts = await getPuttsByHoles(holeIds);
+      const holesWithPutts = holesData.map((hole) => ({
+        ...hole,
+        putts: allPutts.filter((p) => p.holeId === hole.id),
+      }));
 
       return { ...round, holes: holesWithPutts };
     }),
