@@ -8,6 +8,8 @@ import {
   deleteCourse,
   deletePutter,
   deleteRound,
+  deleteHolesByRound,
+  deleteAllRounds,
   getCourse,
   getCourses,
   getHolesByRound,
@@ -349,6 +351,24 @@ export const roundsRouter = router({
       await deleteRound(input.id, ctx.user.id);
       return { success: true as const };
     }),
+
+  /** Clear all hole/putt data for a round, keeping the round metadata. */
+  resetHoles: protectedProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      const round = await getRound(input.id, ctx.user.id);
+      if (!round) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Round not found" });
+      }
+      await deleteHolesByRound(input.id);
+      return { success: true as const };
+    }),
+
+  /** Delete all rounds (and their holes/putts) for the authenticated user. */
+  deleteAll: protectedProcedure.mutation(async ({ ctx }) => {
+    await deleteAllRounds(ctx.user.id);
+    return { success: true as const };
+  }),
 });
 
 // ─── holes router ─────────────────────────────────────────────────────────────

@@ -173,6 +173,14 @@ export async function deleteRound(id: string): Promise<boolean> {
   return ApiGolf.deleteRound(id);
 }
 
+export async function resetRoundHoles(id: string): Promise<boolean> {
+  return ApiGolf.resetRoundHoles(id);
+}
+
+export async function deleteAllRounds(): Promise<boolean> {
+  return ApiGolf.deleteAllRounds();
+}
+
 // ─── Holes ────────────────────────────────────────────────────────────────────
 
 export async function saveHolesForRound(

@@ -21,6 +21,7 @@ import {
   deletePutter,
   getCourses,
   deleteCourse,
+  deleteAllRounds,
 } from "@/lib/storage";
 import { UserProfile, Putter, GolfCourse, LABELS } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
@@ -38,6 +39,8 @@ export default function ProfileScreen() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showDeletePutterConfirm, setShowDeletePutterConfirm] = useState<string | null>(null);
   const [showDeleteCourseConfirm, setShowDeleteCourseConfirm] = useState<string | null>(null);
+  const [showDeleteAllRoundsConfirm, setShowDeleteAllRoundsConfirm] = useState(false);
+  const [isDeletingAllRounds, setIsDeletingAllRounds] = useState(false);
 
   const loadData = useCallback(async () => {
     const [profileData, puttersData, coursesData] = await Promise.all([
@@ -86,6 +89,16 @@ export default function ProfileScreen() {
     await deleteCourse(courseId);
     setShowDeleteCourseConfirm(null);
     loadData();
+  };
+
+  const handleConfirmDeleteAllRounds = async () => {
+    setIsDeletingAllRounds(true);
+    try {
+      await deleteAllRounds();
+      setShowDeleteAllRoundsConfirm(false);
+    } finally {
+      setIsDeletingAllRounds(false);
+    }
   };
 
   return (
@@ -351,6 +364,50 @@ export default function ProfileScreen() {
                 </Text>
               )}
             </View>
+
+            {/* 全ラウンドデータを削除 */}
+            {showDeleteAllRoundsConfirm ? (
+              <View className="bg-surface rounded-2xl p-4 border border-border gap-3" style={{ borderColor: "#dc2626" }}>
+                <Text className="text-foreground font-semibold text-center">
+                  全ラウンドデータを削除しますか？
+                </Text>
+                <Text className="text-muted text-sm text-center">
+                  全てのラウンド・ホール・パット記録が削除されます。この操作は元に戻せません。
+                </Text>
+                <View className="flex-row gap-3">
+                  <TouchableOpacity
+                    onPress={() => setShowDeleteAllRoundsConfirm(false)}
+                    className="flex-1 border border-border rounded-xl py-3 items-center"
+                    activeOpacity={0.7}
+                    disabled={isDeletingAllRounds}
+                  >
+                    <Text className="text-foreground font-medium">キャンセル</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleConfirmDeleteAllRounds}
+                    className="flex-1 rounded-xl py-3 items-center"
+                    style={{ backgroundColor: colors.error, opacity: isDeletingAllRounds ? 0.6 : 1 }}
+                    activeOpacity={0.7}
+                    disabled={isDeletingAllRounds}
+                  >
+                    <Text className="text-white font-medium">
+                      {isDeletingAllRounds ? "削除中..." : "全て削除"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={() => setShowDeleteAllRoundsConfirm(true)}
+                className="bg-surface rounded-2xl p-4 border border-border flex-row items-center justify-center gap-2"
+                activeOpacity={0.7}
+              >
+                <IconSymbol name="trash.fill" size={20} color={colors.error} />
+                <Text style={{ color: colors.error }} className="font-semibold text-base">
+                  全ラウンドデータを削除
+                </Text>
+              </TouchableOpacity>
+            )}
 
             {/* ログアウト */}
             {showLogoutConfirm ? (

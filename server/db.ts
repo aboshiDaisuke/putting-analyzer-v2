@@ -387,6 +387,29 @@ export async function getPuttsByHoles(holeIds: number[]) {
   return db.select().from(putts).where(inArray(putts.holeId, holeIds));
 }
 
+/** Delete all holes (and cascade putts) for a round, then reset totalPutts to 0. */
+export async function deleteHolesByRound(roundId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Delete holes — putts cascade automatically via FK onDelete: "cascade"
+  await db.delete(holes).where(eq(holes.roundId, roundId));
+
+  // Reset totalPutts on the round
+  await db
+    .update(rounds)
+    .set({ totalPutts: 0, updatedAt: new Date() })
+    .where(eq(rounds.id, roundId));
+}
+
+/** Delete all rounds for a user — holes and putts cascade automatically. */
+export async function deleteAllRounds(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.delete(rounds).where(eq(rounds.userId, userId));
+}
+
 /**
  * Replace all putts for a hole with the provided array.
  * Deletes existing rows, then inserts fresh ones — keeping it simple and correct.

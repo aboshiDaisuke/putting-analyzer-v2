@@ -636,6 +636,30 @@ export async function deleteRound(id: string): Promise<boolean> {
   }
 }
 
+/** Clear all hole/putt data for a round while keeping the round metadata. */
+export async function resetRoundHoles(id: string): Promise<boolean> {
+  try {
+    const numId = toNumericId(id);
+    if (isNaN(numId)) return false;
+    await trpcMutate<{ success: true }>("golf.rounds.resetHoles", { id: numId });
+    return true;
+  } catch (error) {
+    console.error("[api-golf] resetRoundHoles error:", error);
+    return false;
+  }
+}
+
+/** Delete all rounds (and their hole/putt data) for the current user. */
+export async function deleteAllRounds(): Promise<boolean> {
+  try {
+    await trpcMutate<{ success: true }>("golf.rounds.deleteAll");
+    return true;
+  } catch (error) {
+    console.error("[api-golf] deleteAllRounds error:", error);
+    return false;
+  }
+}
+
 // ─── Holes ────────────────────────────────────────────────────────────────────
 
 interface SaveHolesResult {

@@ -5,7 +5,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
-import { getRound, deleteRound } from "@/lib/storage";
+import { getRound, deleteRound, resetRoundHoles } from "@/lib/storage";
 import { formatDate } from "@/lib/analytics";
 import { Round, LABELS } from "@/lib/types";
 
@@ -17,6 +17,8 @@ export default function RoundDetailScreen() {
   const [round, setRound] = useState<Round | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const loadRound = async () => {
@@ -36,13 +38,22 @@ export default function RoundDetailScreen() {
       }
     };
     loadRound();
-  }, [id]);
+  }, [id, reloadKey]);
 
   const handleConfirmDelete = async () => {
     if (!round) return;
     await deleteRound(round.id);
     setShowDeleteConfirm(false);
     router.back();
+  };
+
+  const handleConfirmReset = async () => {
+    if (!round) return;
+    await resetRoundHoles(round.id);
+    setShowResetConfirm(false);
+    // Clear state and re-fetch to reflect the reset
+    setRound(null);
+    setReloadKey((k) => k + 1);
   };
 
   if (!round) {
@@ -107,6 +118,32 @@ export default function RoundDetailScreen() {
         </View>
       )}
 
+      {/* リセット確認 */}
+      {showResetConfirm && (
+        <View style={{ backgroundColor: "#fef3c7", borderRadius: 8, padding: 12, margin: 16, marginTop: 0 }}>
+          <Text style={{ color: "#92400e", fontWeight: "600", marginBottom: 4 }}>
+            ホールデータをリセットしますか？
+          </Text>
+          <Text style={{ color: "#78350f", fontSize: 12, marginBottom: 8 }}>
+            パット記録が全て消えます。ラウンド情報（コース・日付等）は残ります。
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => setShowResetConfirm(false)}
+              style={{ flex: 1, padding: 10, backgroundColor: "#6b7280", borderRadius: 6, alignItems: "center" }}
+            >
+              <Text style={{ color: "white", fontWeight: "600" }}>キャンセル</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleConfirmReset}
+              style={{ flex: 1, padding: 10, backgroundColor: "#d97706", borderRadius: 6, alignItems: "center" }}
+            >
+              <Text style={{ color: "white", fontWeight: "600" }}>リセット</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
         {/* 基本情報 */}
         <View className="bg-surface rounded-2xl p-4 border border-border mb-4">
@@ -158,11 +195,16 @@ export default function RoundDetailScreen() {
             <Text className="text-lg font-semibold text-foreground">
               ホール別データ
             </Text>
-            <TouchableOpacity
-              onPress={() => router.push(`/hole-input/${round.id}` as any)}
-            >
-              <Text className="text-primary">編集</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity onPress={() => setShowResetConfirm(true)}>
+                <Text style={{ color: "#d97706" }}>リセット</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push(`/hole-input/${round.id}` as any)}
+              >
+                <Text className="text-primary">編集</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* OUT (1-9) */}
