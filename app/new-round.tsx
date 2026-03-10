@@ -24,7 +24,6 @@ import {
   RoundType,
   CompetitionFormat,
   Round,
-  HoleData,
   LABELS,
 } from "@/lib/types";
 
@@ -100,14 +99,6 @@ export default function NewRoundScreen() {
 
     const selectedPutter = putters.find((p) => p.id === selectedPutterId);
 
-    // 空の18ホールデータを作成
-    const emptyHoles: HoleData[] = Array.from({ length: 18 }, (_, i) => ({
-      holeNumber: i + 1,
-      scoreResult: "par",
-      totalPutts: 2,
-      putts: [],
-    }));
-
     const roundData: Omit<Round, "id" | "createdAt" | "updatedAt"> = {
       date: new Date(date).toISOString(),
       weather,
@@ -128,8 +119,8 @@ export default function NewRoundScreen() {
       putterName: selectedPutter
         ? `${selectedPutter.brandName} ${selectedPutter.productName}`
         : "",
-      holes: emptyHoles,
-      totalPutts: 36, // デフォルト値（後で更新）
+      holes: [], // ホールデータはhole-input画面で逐次保存
+      totalPutts: 0,
     };
 
     setIsSubmitting(true);

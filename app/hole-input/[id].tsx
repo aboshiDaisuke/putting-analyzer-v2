@@ -98,20 +98,29 @@ export default function HoleInputScreen() {
   // ラウンド終了確認UI
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
       if (!id) return;
-      const [roundData, profile] = await Promise.all([
-        getRound(id),
-        getUserProfile(),
-      ]);
-      if (roundData) {
-        setRound(roundData);
-        loadHoleData(roundData, 1);
-      }
-      if (profile?.strideLength) {
-        setStrideLength(profile.strideLength);
+      setLoadError(null);
+      try {
+        const [roundData, profile] = await Promise.all([
+          getRound(id),
+          getUserProfile(),
+        ]);
+        if (roundData) {
+          setRound(roundData);
+          loadHoleData(roundData, 1);
+        } else {
+          setLoadError("ラウンドデータが見つかりません");
+        }
+        if (profile?.strideLength) {
+          setStrideLength(profile.strideLength);
+        }
+      } catch (err) {
+        console.error("[hole-input] loadData error:", err);
+        setLoadError("データの読み込みに失敗しました。もう一度お試しください。");
       }
     };
     loadData();
@@ -255,7 +264,19 @@ export default function HoleInputScreen() {
   if (!round) {
     return (
       <ScreenContainer className="items-center justify-center">
-        <Text className="text-muted">読み込み中...</Text>
+        {loadError ? (
+          <View className="items-center gap-4 px-8">
+            <Text style={{ color: "#991b1b", textAlign: "center", fontSize: 14 }}>{loadError}</Text>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: "#166534", borderRadius: 8 }}
+            >
+              <Text style={{ color: "white", fontWeight: "600" }}>戻る</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <Text className="text-muted">読み込み中...</Text>
+        )}
       </ScreenContainer>
     );
   }
