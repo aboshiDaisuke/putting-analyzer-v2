@@ -41,7 +41,12 @@ async function trpcQuery<T>(path: string, input?: unknown): Promise<T> {
     credentials: "include",
   });
   const data = await res.json();
-  if (data[0]?.error) throw new Error(data[0].error.message ?? "tRPC error");
+  if (data[0]?.error) {
+    // superjson wraps error in { json: { message, code, data } }
+    const e = data[0].error;
+    const msg = e?.json?.message ?? e?.message ?? JSON.stringify(e);
+    throw new Error(msg);
+  }
   return data[0]?.result?.data?.json ?? data[0]?.result?.data;
 }
 
@@ -59,7 +64,11 @@ async function trpcMutate<T>(path: string, input?: unknown): Promise<T> {
     body: JSON.stringify({ "0": { json: input ?? null } }),
   });
   const data = await res.json();
-  if (data[0]?.error) throw new Error(data[0].error.message ?? "tRPC error");
+  if (data[0]?.error) {
+    const e = data[0].error;
+    const msg = e?.json?.message ?? e?.message ?? JSON.stringify(e);
+    throw new Error(msg);
+  }
   return data[0]?.result?.data?.json ?? data[0]?.result?.data;
 }
 
