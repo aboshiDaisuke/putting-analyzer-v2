@@ -1,6 +1,7 @@
 {
   "buildCommand": "npx expo export --platform web",
   "outputDirectory": "dist",
+  "regions": ["hnd1"],
   "rewrites": [
     {
       "source": "/((?!api/).*)",

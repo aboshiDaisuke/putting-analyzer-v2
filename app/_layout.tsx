@@ -80,6 +80,10 @@ export default function RootLayout() {
             refetchOnWindowFocus: false,
             // Retry failed requests once
             retry: 1,
+            // Cache data for 5 minutes (reduces redundant API calls on tab switch)
+            staleTime: 1000 * 60 * 5,
+            // Keep unused data in cache for 10 minutes
+            gcTime: 1000 * 60 * 10,
           },
         },
       }),
