@@ -28,10 +28,8 @@ import {
 async function trpcQuery<T>(path: string, input?: unknown): Promise<T> {
   const token = await Auth.getSessionToken();
   const baseUrl = getApiBaseUrl();
-  const inputParam =
-    input !== undefined
-      ? encodeURIComponent(JSON.stringify({ json: input }))
-      : encodeURIComponent(JSON.stringify({ json: null }));
+  // tRPC batch format: input must be keyed by batch index "0"
+  const inputParam = encodeURIComponent(JSON.stringify({ "0": { json: input ?? null } }));
   const url = `${baseUrl}/api/trpc/${path}?input=${inputParam}&batch=1`;
   const res = await fetch(url, {
     headers: {
