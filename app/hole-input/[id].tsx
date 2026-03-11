@@ -316,21 +316,26 @@ export default function HoleInputScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          className="border-b border-border"
+          style={{ borderBottomWidth: 1, borderBottomColor: colors.border }}
           contentContainerStyle={{ paddingHorizontal: 8 }}
         >
           {Array.from({ length: 18 }, (_, i) => i + 1).map((hole) => (
             <TouchableOpacity
               key={hole}
-              className={`px-4 py-3 ${
-                currentHole === hole ? "border-b-2 border-primary" : ""
-              }`}
+              style={{
+                paddingHorizontal: 16,
+                paddingTop: 12,
+                paddingBottom: 10,
+                borderBottomWidth: currentHole === hole ? 2 : 0,
+                borderBottomColor: colors.primary,
+              }}
               onPress={() => saveHoleAndNavigate(hole)}
             >
               <Text
-                className={`font-medium ${
-                  currentHole === hole ? "text-primary" : "text-muted"
-                }`}
+                style={{
+                  fontWeight: "600",
+                  color: currentHole === hole ? colors.primary : colors.muted,
+                }}
               >
                 {hole}H
               </Text>
