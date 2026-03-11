@@ -134,9 +134,10 @@ export default function ScanCardScreen() {
 
         setAnalysisProgress(((i + 0.5) / capturedImages.length) * 100);
 
-        // 2. LLMで解析
+        // 2. LLMで解析（解析後にストレージから自動削除される）
         const analyzeResult = await analyzeMutation.mutateAsync({
           imageUrl: uploadResult.imageUrl,
+          imageKey: uploadResult.imageKey,
         });
 
         if (analyzeResult.success && analyzeResult.data) {

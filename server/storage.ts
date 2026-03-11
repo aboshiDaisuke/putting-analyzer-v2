@@ -59,3 +59,15 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
 
   return { key, url: publicUrl };
 }
+
+export async function storageDelete(relKey: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const key = normalizeKey(relKey);
+
+  const { error } = await supabase.storage.from(STORAGE_BUCKET).remove([key]);
+
+  if (error) {
+    // 分析は成功しているためエラーはログのみ（例外は投げない）
+    console.error(`Storage delete failed for key "${key}": ${error.message}`);
+  }
+}
