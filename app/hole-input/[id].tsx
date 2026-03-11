@@ -317,18 +317,18 @@ export default function HoleInputScreen() {
           horizontal
           showsHorizontalScrollIndicator={false}
           style={{ height: 48, borderBottomWidth: 1, borderBottomColor: colors.border }}
-          contentContainerStyle={{ paddingHorizontal: 8, alignItems: "center" }}
+          contentContainerStyle={{ paddingHorizontal: 8 }}
         >
           {Array.from({ length: 18 }, (_, i) => i + 1).map((hole) => (
             <TouchableOpacity
               key={hole}
               style={{
                 paddingHorizontal: 16,
-                paddingVertical: 12,
+                height: 48,
                 borderBottomWidth: currentHole === hole ? 2 : 0,
                 borderBottomColor: colors.primary,
-                alignSelf: "stretch",
                 justifyContent: "center",
+                alignItems: "center",
               }}
               onPress={() => saveHoleAndNavigate(hole)}
             >
@@ -477,7 +477,7 @@ export default function HoleInputScreen() {
               />
             </View>
 
-            {/* Length (st / yd) */}
+            {/* Length (st / m) */}
             <View>
               <Text className="text-muted text-sm mb-2 font-medium">
                 Length（距離: {calculateDistance(parseFloat(lengthSteps) || 0, strideLength).toFixed(1)}m）
@@ -496,7 +496,7 @@ export default function HoleInputScreen() {
                   />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-muted text-xs mb-1">ヤード (yd)</Text>
+                  <Text className="text-muted text-xs mb-1">メートル (m)</Text>
                   <TextInput
                     className="bg-background border border-border rounded-lg px-3 py-3 text-foreground text-lg"
                     value={lengthYards}

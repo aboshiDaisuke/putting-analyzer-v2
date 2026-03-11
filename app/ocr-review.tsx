@@ -170,12 +170,24 @@ export default function OcrReviewScreen() {
         const now = new Date();
         let roundDate = now.toISOString();
         if (dateStr) {
-          const parts = dateStr.split("/");
-          if (parts.length === 2) {
-            const month = parseInt(parts[0], 10);
-            const day = parseInt(parts[1], 10);
-            if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-              roundDate = new Date(now.getFullYear(), month - 1, day).toISOString();
+          // YYYYMMDD 形式（カード記入形式）
+          const yyyymmdd = dateStr.replace(/\D/g, ""); // 数字のみ抽出
+          if (yyyymmdd.length === 8) {
+            const year = parseInt(yyyymmdd.slice(0, 4), 10);
+            const month = parseInt(yyyymmdd.slice(4, 6), 10);
+            const day = parseInt(yyyymmdd.slice(6, 8), 10);
+            if (year >= 2000 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+              roundDate = new Date(year, month - 1, day).toISOString();
+            }
+          } else {
+            // フォールバック: MM/DD 形式（旧形式との互換性）
+            const parts = dateStr.split("/");
+            if (parts.length === 2) {
+              const month = parseInt(parts[0], 10);
+              const day = parseInt(parts[1], 10);
+              if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+                roundDate = new Date(now.getFullYear(), month - 1, day).toISOString();
+              }
             }
           }
         }
@@ -363,15 +375,15 @@ export default function OcrReviewScreen() {
               fontSize: 13,
               textAlign: "center",
             }}
-            value={puttData.lengthYards?.toString() || ""}
+            value={puttData.lengthMeters?.toString() || ""}
             onChangeText={(v) =>
-              updatePuttField(holeIndex, puttIndex, "lengthYards", v ? parseInt(v, 10) : null)
+              updatePuttField(holeIndex, puttIndex, "lengthMeters", v ? parseInt(v, 10) : null)
             }
             keyboardType="number-pad"
             placeholder="--"
             placeholderTextColor={colors.muted}
           />
-          <Text style={{ color: colors.muted, fontSize: 11, marginLeft: 4 }}>yd</Text>
+          <Text style={{ color: colors.muted, fontSize: 11, marginLeft: 4 }}>m</Text>
         </View>
 
         {/* Missed Direction */}

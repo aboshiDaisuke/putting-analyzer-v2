@@ -16,10 +16,10 @@ import { CARD_TO_APP } from "./types";
 export interface OcrPuttData {
   puttNumber: 1 | 2 | 3;
   cupIn: boolean; // In チェックボックス（塗りつぶし判定）
-  distPrev: number | null; // Dist(prev) yd
-  result: "E" | "Ba" | "P" | "Bo" | "D+" | null; // Result（塗りつぶし判定）
-  lengthSteps: number | null; // Length st（歩数）
-  lengthYards: number | null; // Length yd（ヤード）
+  distPrev: number | null; // Dist(prev) yd（前のパットからの残り距離、3桁まで）
+  result: "E" | "Ba" | "P" | "Bo" | "D+" | null; // Putt/Result（カード上"Putt:"ラベル、塗りつぶし判定）
+  lengthSteps: number | null; // Length st（歩数、2桁）
+  lengthMeters: number | null; // Length m（メートル直入力、2桁）※カード上では "m" 単位
   missedDirection: MissedDirection | null; // Missed Direction 1-5（塗りつぶし判定）
   touch: PuttStrength | null; // Touch 1-5（塗りつぶし判定）
   lineUD: "F" | "U" | "D" | "UD" | "DU" | null; // Line(U/D)（塗りつぶし判定）
@@ -70,7 +70,7 @@ export function convertOcrPuttToAppPutt(
     ocrPutt.distPrev !== null ||
     ocrPutt.result !== null ||
     ocrPutt.lengthSteps !== null ||
-    ocrPutt.lengthYards !== null ||
+    ocrPutt.lengthMeters !== null ||
     ocrPutt.missedDirection !== null ||
     ocrPutt.touch !== null ||
     ocrPutt.lineUD !== null ||
@@ -80,7 +80,9 @@ export function convertOcrPuttToAppPutt(
   if (!hasData) return null;
 
   const steps = ocrPutt.lengthSteps || 0;
-  const distanceMeters = steps * strideLength;
+  // distanceMeters: 歩数から計算。歩数がない場合はカード記入のメートル値を使用
+  const distanceMeters =
+    steps > 0 ? steps * strideLength : (ocrPutt.lengthMeters || 0);
 
   return {
     strokeNumber: ocrPutt.puttNumber,
@@ -88,7 +90,7 @@ export function convertOcrPuttToAppPutt(
     distPrev: ocrPutt.distPrev,
     result: convertResult(ocrPutt.result),
     lengthSteps: ocrPutt.lengthSteps,
-    lengthYards: ocrPutt.lengthYards,
+    lengthYards: ocrPutt.lengthMeters, // カードの "m" フィールド（DB列名は将来 lengthMeters にリネーム予定）
     distanceMeters,
     missedDirection: ocrPutt.missedDirection,
     touch: ocrPutt.touch,
