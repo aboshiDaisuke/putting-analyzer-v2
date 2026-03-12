@@ -38,7 +38,7 @@ async function compressForUpload(uri: string, fallbackBase64: string): Promise<s
       uri,
       [{ resize: { width: 1920 } }],
       {
-        compress: 0.7,
+        compress: 0.85, // 手書き数字を正確に読むために高品質を維持（0.7では細部が潰れる）
         format: ImageManipulator.SaveFormat.JPEG,
         base64: true,
       }
