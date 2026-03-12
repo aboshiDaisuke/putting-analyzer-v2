@@ -67,6 +67,8 @@ export default function ScanCardScreen() {
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | undefined>(undefined);
   const [focusRing, setFocusRing] = useState<{ x: number; y: number } | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ライト（トーチ）
+  const [torchEnabled, setTorchEnabled] = useState(false);
 
   const handleTapToFocus = (pageX: number, pageY: number) => {
     const nx = Math.max(0, Math.min(1, pageX / screenWidth));
@@ -74,7 +76,11 @@ export default function ScanCardScreen() {
     setFocusPoint({ x: nx, y: ny });
     setFocusRing({ x: pageX, y: pageY });
     if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
-    focusTimerRef.current = setTimeout(() => setFocusRing(null), 2000);
+    // 2.5秒後にフォーカスリングを消し、focusPointをリセットして連続AFに戻す
+    focusTimerRef.current = setTimeout(() => {
+      setFocusRing(null);
+      setFocusPoint(undefined);
+    }, 2500);
   };
 
   const analyzeMutation = trpc.ocr.analyzeScorecard.useMutation();
@@ -485,6 +491,7 @@ export default function ScanCardScreen() {
         facing="back"
         autofocus="on"
         focusPoint={focusPoint}
+        enableTorch={torchEnabled}
       >
         <View style={{ flex: 1 }}>
           {/* ヘッダー */}
@@ -568,6 +575,34 @@ export default function ScanCardScreen() {
                 ぼやける場合は画面をタップしてピントを合わせてください
               </Text>
             </View>
+
+            {/* ライト（トーチ）ON/OFFボタン — ガイドフレーム右上に固定 */}
+            <TouchableOpacity
+              onPress={() => setTorchEnabled((t) => !t)}
+              style={{
+                position: "absolute",
+                top: 12,
+                right: 12,
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                backgroundColor: torchEnabled
+                  ? "rgba(255,215,0,0.25)"
+                  : "rgba(0,0,0,0.45)",
+                borderWidth: 1,
+                borderColor: torchEnabled
+                  ? "#FFD700"
+                  : "rgba(255,255,255,0.4)",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <IconSymbol
+                name={torchEnabled ? "bolt.fill" : "bolt.slash.fill"}
+                size={20}
+                color={torchEnabled ? "#FFD700" : "#FFFFFF"}
+              />
+            </TouchableOpacity>
 
             {/* タップフォーカスリング（タップ位置に2秒表示） */}
             {focusRing && (
