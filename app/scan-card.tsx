@@ -13,6 +13,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import * as ImageManipulator from "expo-image-manipulator";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -24,6 +25,22 @@ type ScanStep = "capture" | "preview" | "analyzing" | "done";
 interface CapturedImage {
   uri: string;
   base64: string;
+}
+
+// Vercel Serverless Functions の本文上限は 4.5MB。
+// iPhoneのJPEG(quality 0.85)は2〜5MB、base64で+33%になるため超過しやすい。
+// → アップロード前に最大1920px幅・quality 0.7 に圧縮して確実に上限内に収める。
+async function compressForUpload(uri: string): Promise<string> {
+  const result = await ImageManipulator.manipulateAsync(
+    uri,
+    [{ resize: { width: 1920 } }],
+    {
+      compress: 0.7,
+      format: ImageManipulator.SaveFormat.JPEG,
+      base64: true,
+    }
+  );
+  return result.base64!;
 }
 
 export default function ScanCardScreen() {
@@ -128,15 +145,18 @@ export default function ScanCardScreen() {
       try {
         setAnalysisProgress(((i) / capturedImages.length) * 100);
 
-        // 1. 画像をS3にアップロード
+        // 1. 画像を圧縮（Vercel 4.5MB 上限対策: 1920px幅・quality 0.7）
+        const compressedBase64 = await compressForUpload(capturedImages[i].uri);
+
+        // 2. 画像をS3にアップロード
         const uploadResult = await uploadMutation.mutateAsync({
-          base64: capturedImages[i].base64,
+          base64: compressedBase64,
           mimeType: "image/jpeg",
         });
 
         setAnalysisProgress(((i + 0.5) / capturedImages.length) * 100);
 
-        // 2. LLMで解析（解析後にストレージから自動削除される）
+        // 3. LLMで解析（解析後にストレージから自動削除される）
         const analyzeResult = await analyzeMutation.mutateAsync({
           imageUrl: uploadResult.imageUrl,
           imageKey: uploadResult.imageKey,
