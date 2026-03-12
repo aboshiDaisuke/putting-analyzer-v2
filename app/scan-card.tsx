@@ -8,6 +8,7 @@ import {
   Platform,
   ScrollView,
   Image,
+  useWindowDimensions,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -30,23 +31,30 @@ interface CapturedImage {
 // Vercel Serverless Functions の本文上限は 4.5MB。
 // iPhoneのJPEG(quality 0.85)は2〜5MB、base64で+33%になるため超過しやすい。
 // → アップロード前に最大1920px幅・quality 0.7 に圧縮して確実に上限内に収める。
-async function compressForUpload(uri: string): Promise<string> {
-  const result = await ImageManipulator.manipulateAsync(
-    uri,
-    [{ resize: { width: 1920 } }],
-    {
-      compress: 0.7,
-      format: ImageManipulator.SaveFormat.JPEG,
-      base64: true,
-    }
-  );
-  return result.base64!;
+// 圧縮失敗時は元のbase64にフォールバック。
+async function compressForUpload(uri: string, fallbackBase64: string): Promise<string> {
+  try {
+    const result = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1920 } }],
+      {
+        compress: 0.7,
+        format: ImageManipulator.SaveFormat.JPEG,
+        base64: true,
+      }
+    );
+    return result.base64!;
+  } catch (e) {
+    console.warn("Image compression failed, using original:", e);
+    return fallbackBase64;
+  }
 }
 
 export default function ScanCardScreen() {
   const router = useRouter();
   const { roundId } = useLocalSearchParams<{ roundId?: string }>();
   const colors = useColors();
+  const { width: screenWidth } = useWindowDimensions();
   const [permission, requestPermission] = useCameraPermissions();
   const [step, setStep] = useState<ScanStep>("capture");
   const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
@@ -146,7 +154,7 @@ export default function ScanCardScreen() {
         setAnalysisProgress(((i) / capturedImages.length) * 100);
 
         // 1. 画像を圧縮（Vercel 4.5MB 上限対策: 1920px幅・quality 0.7）
-        const compressedBase64 = await compressForUpload(capturedImages[i].uri);
+        const compressedBase64 = await compressForUpload(capturedImages[i].uri, capturedImages[i].base64);
 
         // 2. 画像をS3にアップロード
         const uploadResult = await uploadMutation.mutateAsync({
@@ -168,8 +176,9 @@ export default function ScanCardScreen() {
           results.push({ error: true, index: i + 1 });
         }
       } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
         console.error(`Image ${i + 1} analysis failed:`, error);
-        results.push({ error: true, index: i + 1 });
+        results.push({ error: true, index: i + 1, message: errMsg });
       }
     }
 
@@ -190,8 +199,14 @@ export default function ScanCardScreen() {
       });
     } else {
       // Alert.alert はWebで正常動作しないためインライン表示に切り替え
+      const errDetails = results
+        .filter((r) => r.error && r.message)
+        .map((r) => r.message)
+        .join("\n");
       setAnalysisError(
-        "スコアカードの読み取りに失敗しました。\n明るい場所で撮影し、四隅の■マークが写るようにしてください。"
+        "スコアカードの読み取りに失敗しました。\n" +
+        "明るい場所で撮影し、四隅の■マークが写るようにしてください。" +
+        (errDetails ? `\n\n[詳細] ${errDetails}` : "")
       );
       setStep("preview");
     }
@@ -450,6 +465,14 @@ export default function ScanCardScreen() {
   }
 
   // カメラ撮影画面
+  // ガイドフレームサイズ計算（スクリーン幅の88%、縦横比0.7のカード）
+  const GUIDE_SCALE = 0.88;
+  const CARD_ASPECT = 0.7; // width / height
+  const frameWidth = screenWidth * GUIDE_SCALE;
+  const frameHeight = frameWidth / CARD_ASPECT;
+  const sidePad = (screenWidth - frameWidth) / 2;
+  const DARK = "rgba(0,0,0,0.58)";
+
   return (
     <View style={{ flex: 1, backgroundColor: "#000" }}>
       <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back">
@@ -473,9 +496,7 @@ export default function ScanCardScreen() {
             >
               <IconSymbol name="arrow.left" size={24} color="#FFFFFF" />
             </TouchableOpacity>
-            <Text
-              style={{ color: "#FFFFFF", fontSize: 18, fontWeight: "700" }}
-            >
+            <Text style={{ color: "#FFFFFF", fontSize: 18, fontWeight: "700" }}>
               スコアカード撮影
             </Text>
             <View style={{ width: 40 }}>
@@ -489,13 +510,7 @@ export default function ScanCardScreen() {
                     alignItems: "center",
                   }}
                 >
-                  <Text
-                    style={{
-                      color: "#FFF",
-                      fontSize: 13,
-                      fontWeight: "700",
-                    }}
-                  >
+                  <Text style={{ color: "#FFF", fontSize: 13, fontWeight: "700" }}>
                     {capturedImages.length}枚
                   </Text>
                 </View>
@@ -503,83 +518,38 @@ export default function ScanCardScreen() {
             </View>
           </View>
 
-          {/* ガイドフレーム */}
-          <View
-            style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-          >
-            {/* 四隅のコーナーマーク */}
-            <View
-              style={{
-                width: "88%",
-                aspectRatio: 0.7,
-                position: "relative",
-              }}
-            >
-              {/* 左上 */}
-              <View
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: 30,
-                  height: 30,
-                  borderTopWidth: 3,
-                  borderLeftWidth: 3,
-                  borderColor: "#FFFFFF",
-                }}
-              />
-              {/* 右上 */}
-              <View
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  right: 0,
-                  width: 30,
-                  height: 30,
-                  borderTopWidth: 3,
-                  borderRightWidth: 3,
-                  borderColor: "#FFFFFF",
-                }}
-              />
-              {/* 左下 */}
-              <View
-                style={{
-                  position: "absolute",
-                  bottom: 0,
-                  left: 0,
-                  width: 30,
-                  height: 30,
-                  borderBottomWidth: 3,
-                  borderLeftWidth: 3,
-                  borderColor: "#FFFFFF",
-                }}
-              />
-              {/* 右下 */}
-              <View
-                style={{
-                  position: "absolute",
-                  bottom: 0,
-                  right: 0,
-                  width: 30,
-                  height: 30,
-                  borderBottomWidth: 3,
-                  borderRightWidth: 3,
-                  borderColor: "#FFFFFF",
-                }}
-              />
+          {/* ガイドオーバーレイ: フレーム外を暗くして撮影範囲を明確化 */}
+          <View style={{ flex: 1 }}>
+            {/* 上部 暗いエリア */}
+            <View style={{ flex: 1, backgroundColor: DARK }} />
+
+            {/* 中段: 左暗い | ガイドフレーム（透明・白枠） | 右暗い */}
+            <View style={{ flexDirection: "row", height: frameHeight }}>
+              {/* 左暗いエリア */}
+              <View style={{ width: sidePad, backgroundColor: DARK }} />
+
+              {/* ガイドフレーム本体（カメラが透けて見える） */}
+              <View style={{ flex: 1, borderWidth: 2, borderColor: "rgba(255,255,255,0.85)" }}>
+                {/* 左上コーナー */}
+                <View style={{ position: "absolute", top: -1, left: -1, width: 32, height: 32, borderTopWidth: 4, borderLeftWidth: 4, borderColor: "#FFF" }} />
+                {/* 右上コーナー */}
+                <View style={{ position: "absolute", top: -1, right: -1, width: 32, height: 32, borderTopWidth: 4, borderRightWidth: 4, borderColor: "#FFF" }} />
+                {/* 左下コーナー */}
+                <View style={{ position: "absolute", bottom: -1, left: -1, width: 32, height: 32, borderBottomWidth: 4, borderLeftWidth: 4, borderColor: "#FFF" }} />
+                {/* 右下コーナー */}
+                <View style={{ position: "absolute", bottom: -1, right: -1, width: 32, height: 32, borderBottomWidth: 4, borderRightWidth: 4, borderColor: "#FFF" }} />
+              </View>
+
+              {/* 右暗いエリア */}
+              <View style={{ width: sidePad, backgroundColor: DARK }} />
             </View>
-            <Text
-              style={{
-                color: "#FFFFFF",
-                marginTop: 16,
-                textAlign: "center",
-                opacity: 0.9,
-                fontSize: 15,
-                fontWeight: "500",
-              }}
-            >
-              四隅の■マークが枠内に入るように{"\n"}カードを撮影してください
-            </Text>
+
+            {/* 下部 暗いエリア + 説明テキスト */}
+            <View style={{ flex: 1, backgroundColor: DARK, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }}>
+              <Text style={{ color: "#FFFFFF", textAlign: "center", fontSize: 14, fontWeight: "500", lineHeight: 22 }}>
+                カード全体が枠内に収まるように{"\n"}位置を合わせてシャッターを押してください
+              </Text>
+            </View>
           </View>
 
           {/* コントロール */}
