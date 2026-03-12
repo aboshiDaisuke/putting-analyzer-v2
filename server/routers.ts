@@ -211,7 +211,7 @@ export const appRouter = router({
             },
           ],
           response_format: { type: "json_object" },
-          thinkingBudget: 2048, // 思考モード: 視覚的な塗りつぶし判定の精度向上（5000→2048でバランス調整）
+          // thinkingBudget: Vercel タイムアウト超過リスクがあるため無効（思考モードは遅すぎる）
         });
 
         const rawContent = response.choices[0]?.message?.content;
