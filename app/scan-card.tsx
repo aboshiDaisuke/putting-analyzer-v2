@@ -36,6 +36,7 @@ export default function ScanCardScreen() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisResults, setAnalysisResults] = useState<any[]>([]);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
 
   const uploadMutation = trpc.ocr.uploadImage.useMutation();
@@ -120,6 +121,7 @@ export default function ScanCardScreen() {
 
     setStep("analyzing");
     setAnalysisProgress(0);
+    setAnalysisError(null);
     const results: any[] = [];
 
     for (let i = 0; i < capturedImages.length; i++) {
@@ -167,14 +169,11 @@ export default function ScanCardScreen() {
         },
       });
     } else {
-      Alert.alert(
-        "読み取り失敗",
-        "スコアカードの読み取りに失敗しました。\n\n以下をお試しください：\n・明るい場所で撮影する\n・カードが平らになるように置く\n・四隅の■マークが写るようにする",
-        [
-          { text: "もう一度撮影", onPress: () => resetScan() },
-          { text: "キャンセル", onPress: () => router.back() },
-        ]
+      // Alert.alert はWebで正常動作しないためインライン表示に切り替え
+      setAnalysisError(
+        "スコアカードの読み取りに失敗しました。\n明るい場所で撮影し、四隅の■マークが写るようにしてください。"
       );
+      setStep("preview");
     }
   };
 
@@ -183,6 +182,7 @@ export default function ScanCardScreen() {
     setCurrentImageIndex(0);
     setAnalysisProgress(0);
     setAnalysisResults([]);
+    setAnalysisError(null);
     setStep("capture");
   };
 
@@ -243,6 +243,14 @@ export default function ScanCardScreen() {
 
         <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
           <View className="gap-4">
+            {/* エラー表示 */}
+            {analysisError && (
+              <View style={{ backgroundColor: "rgba(220,38,38,0.1)", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "rgba(220,38,38,0.4)" }}>
+                <Text style={{ color: "#dc2626", fontWeight: "600", fontSize: 13, marginBottom: 4 }}>読み取りエラー</Text>
+                <Text style={{ color: colors.foreground, fontSize: 13, lineHeight: 20 }}>{analysisError}</Text>
+              </View>
+            )}
+
             {/* 撮影枚数表示 */}
             <View className="bg-surface rounded-2xl p-4 border border-border">
               <Text className="text-foreground font-semibold text-base mb-1">
