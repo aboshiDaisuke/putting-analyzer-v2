@@ -64,7 +64,6 @@ export default function ScanCardScreen() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
 
-  const uploadMutation = trpc.ocr.uploadImage.useMutation();
   const analyzeMutation = trpc.ocr.analyzeScorecard.useMutation();
 
   const handleCapture = async () => {
@@ -151,23 +150,15 @@ export default function ScanCardScreen() {
 
     for (let i = 0; i < capturedImages.length; i++) {
       try {
-        setAnalysisProgress(((i) / capturedImages.length) * 100);
+        setAnalysisProgress((i / capturedImages.length) * 100);
 
-        // 1. 画像を圧縮（Vercel 4.5MB 上限対策: 1920px幅・quality 0.7）
+        // 1. 画像を圧縮（Vercel 4.5MB 上限対策: 1920px幅・quality 0.85）
         const compressedBase64 = await compressForUpload(capturedImages[i].uri, capturedImages[i].base64);
 
-        // 2. 画像をS3にアップロード
-        const uploadResult = await uploadMutation.mutateAsync({
+        // 2. base64を直接Geminiへ送信（Supabase経由不要 → ラウンドトリップ削減で高速化）
+        const analyzeResult = await analyzeMutation.mutateAsync({
           base64: compressedBase64,
           mimeType: "image/jpeg",
-        });
-
-        setAnalysisProgress(((i + 0.5) / capturedImages.length) * 100);
-
-        // 3. LLMで解析（解析後にストレージから自動削除される）
-        const analyzeResult = await analyzeMutation.mutateAsync({
-          imageUrl: uploadResult.imageUrl,
-          imageKey: uploadResult.imageKey,
         });
 
         if (analyzeResult.success && analyzeResult.data) {

@@ -145,62 +145,54 @@ export const appRouter = router({
       }),
 
     // LLMを使ってスコアカード画像を解析する
+    // base64を直接受け取りGeminiへ送る（Supabase経由不要 → ラウンドトリップ削減で高速化）
     analyzeScorecard: publicProcedure
       .input(
         z.object({
-          imageUrl: z.string(),
-          imageKey: z.string().optional(), // 解析後に削除するためのストレージキー
+          base64: z.string(),
+          mimeType: z.string().default("image/jpeg"),
         })
       )
       .mutation(async ({ input }) => {
-        let result: { success: true; data: unknown } | { success: false; data: null; rawContent: string };
+        // data: URI を構築して llm.ts の inline image パスを使う
+        const dataUri = `data:${input.mimeType};base64,${input.base64}`;
 
-        try {
-          const response = await invokeLLM({
-            messages: [
-              { role: "system", content: OCR_SYSTEM_PROMPT },
-              {
-                role: "user",
-                content: [
-                  {
-                    type: "text",
-                    text: "このスコアカード画像を読み取ってください。各セクションを丁寧に確認し、塗りつぶされた○と空白の○を正確に判定して、JSON形式で返してください。",
+        const response = await invokeLLM({
+          messages: [
+            { role: "system", content: OCR_SYSTEM_PROMPT },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: "このスコアカード画像を読み取ってください。各セクションを丁寧に確認し、塗りつぶされた○と空白の○を正確に判定して、JSON形式で返してください。",
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: dataUri,
+                    detail: "high",
                   },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: input.imageUrl,
-                      detail: "high",
-                    },
-                  },
-                ],
-              },
-            ],
-            response_format: { type: "json_object" },
-            thinkingBudget: 5000, // 思考モード: 複雑な手書きOCRの精度向上のため
-          });
+                },
+              ],
+            },
+          ],
+          response_format: { type: "json_object" },
+        });
 
-          const rawContent = response.choices[0]?.message?.content;
-          if (!rawContent) {
-            throw new Error("LLMからの応答が空です");
-          }
-
-          const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
-
-          try {
-            const parsed = JSON.parse(content);
-            result = { success: true as const, data: parsed };
-          } catch {
-            result = { success: false as const, data: null, rawContent: content };
-          }
-        } finally {
-          // 解析完了後（成功・失敗問わず）、ストレージから画像を削除
-          if (input.imageKey) {
-            await storageDelete(input.imageKey);
-          }
+        const rawContent = response.choices[0]?.message?.content;
+        if (!rawContent) {
+          throw new Error("LLMからの応答が空です");
         }
 
-        return result;
+        const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+
+        try {
+          const parsed = JSON.parse(content);
+          return { success: true as const, data: parsed };
+        } catch {
+          return { success: false as const, data: null, rawContent: content };
+        }
       }),
 
     // 複数枚のスコアカードを一括解析
