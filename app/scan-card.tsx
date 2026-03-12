@@ -54,7 +54,7 @@ export default function ScanCardScreen() {
   const router = useRouter();
   const { roundId } = useLocalSearchParams<{ roundId?: string }>();
   const colors = useColors();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [permission, requestPermission] = useCameraPermissions();
   const [step, setStep] = useState<ScanStep>("capture");
   const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
@@ -63,6 +63,19 @@ export default function ScanCardScreen() {
   const [analysisResults, setAnalysisResults] = useState<any[]>([]);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
+  // タップでピント合わせ
+  const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | undefined>(undefined);
+  const [focusRing, setFocusRing] = useState<{ x: number; y: number } | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleTapToFocus = (pageX: number, pageY: number) => {
+    const nx = Math.max(0, Math.min(1, pageX / screenWidth));
+    const ny = Math.max(0, Math.min(1, pageY / screenHeight));
+    setFocusPoint({ x: nx, y: ny });
+    setFocusRing({ x: pageX, y: pageY });
+    if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+    focusTimerRef.current = setTimeout(() => setFocusRing(null), 2000);
+  };
 
   const analyzeMutation = trpc.ocr.analyzeScorecard.useMutation();
 
@@ -466,7 +479,13 @@ export default function ScanCardScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#000" }}>
-      <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back">
+      <CameraView
+        ref={cameraRef}
+        style={{ flex: 1 }}
+        facing="back"
+        autofocus="on"
+        focusPoint={focusPoint}
+      >
         <View style={{ flex: 1 }}>
           {/* ヘッダー */}
           <View
@@ -509,8 +528,13 @@ export default function ScanCardScreen() {
             </View>
           </View>
 
-          {/* ガイドオーバーレイ: フレーム外を暗くして撮影範囲を明確化 */}
-          <View style={{ flex: 1 }}>
+          {/* ガイドオーバーレイ: フレーム外を暗くして撮影範囲を明確化。タップでピント合わせ */}
+          <View
+            style={{ flex: 1 }}
+            onTouchEnd={(e) =>
+              handleTapToFocus(e.nativeEvent.pageX, e.nativeEvent.pageY)
+            }
+          >
             {/* 上部 暗いエリア */}
             <View style={{ flex: 1, backgroundColor: DARK }} />
 
@@ -540,7 +564,27 @@ export default function ScanCardScreen() {
               <Text style={{ color: "#FFFFFF", textAlign: "center", fontSize: 14, fontWeight: "500", lineHeight: 22 }}>
                 カード全体が枠内に収まるように{"\n"}位置を合わせてシャッターを押してください
               </Text>
+              <Text style={{ color: "rgba(255,255,255,0.55)", textAlign: "center", fontSize: 12, marginTop: 6 }}>
+                ぼやける場合は画面をタップしてピントを合わせてください
+              </Text>
             </View>
+
+            {/* タップフォーカスリング（タップ位置に2秒表示） */}
+            {focusRing && (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  left: focusRing.x - 32,
+                  top: focusRing.y - 32,
+                  width: 64,
+                  height: 64,
+                  borderRadius: 6,
+                  borderWidth: 2,
+                  borderColor: "#FFD700",
+                }}
+              />
+            )}
           </View>
 
           {/* コントロール */}
