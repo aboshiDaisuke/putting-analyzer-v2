@@ -39,6 +39,8 @@ export type InvokeParams = {
   response_format?: { type: "text" | "json_object" | "json_schema" };
   maxTokens?: number;
   max_tokens?: number;
+  /** Gemini 2.5 思考トークン数。値が大きいほど精度が上がるが処理時間も増える。OCRには 5000 推奨。 */
+  thinkingBudget?: number;
 };
 
 export type InvokeResult = {
@@ -127,9 +129,24 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       ? "json_object"
       : undefined;
 
+  // generationConfig: JSON強制出力 + 思考モード（精度向上）
+  const generationConfig: Record<string, unknown> = {};
+  if (responseFormatType === "json_object") {
+    // responseMimeType でモデルに JSON 出力を強制（テキスト指示より確実）
+    generationConfig.responseMimeType = "application/json";
+  }
+  if (params.thinkingBudget && params.thinkingBudget > 0) {
+    // thinking: モデルが回答前に内部で推論するトークン数
+    // OCRのような複雑な視覚タスクで精度が大幅に向上する
+    generationConfig.thinkingConfig = { thinkingBudget: params.thinkingBudget };
+  }
+
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     ...(systemInstruction ? { systemInstruction } : {}),
+    ...(Object.keys(generationConfig).length > 0
+      ? { generationConfig: generationConfig as any }
+      : {}),
   });
 
   // Convert messages to Gemini history format (all but the last)
@@ -151,11 +168,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     ? await convertContentToParts(lastMessage.content)
     : [{ text: "" }];
 
-  // If JSON output requested, append a reminder
-  const finalParts =
-    responseFormatType === "json_object"
-      ? [...lastParts, { text: "\n\nRespond with valid JSON only, no markdown code fences or explanation." }]
-      : lastParts;
+  // responseMimeType: "application/json" が設定されている場合、テキストリマインダー不要
+  const finalParts = lastParts;
 
   const result = await chat.sendMessage(finalParts);
   const responseText = result.response.text();

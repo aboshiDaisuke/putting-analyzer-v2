@@ -164,7 +164,7 @@ export const appRouter = router({
                 content: [
                   {
                     type: "text",
-                    text: "このスコアカード画像を読み取ってください。塗りつぶされた○と空白の○を正確に判定し、手書き数字を読み取って、JSON形式で返してください。",
+                    text: "このスコアカード画像を読み取ってください。各セクションを丁寧に確認し、塗りつぶされた○と空白の○を正確に判定して、JSON形式で返してください。",
                   },
                   {
                     type: "image_url",
@@ -177,6 +177,7 @@ export const appRouter = router({
               },
             ],
             response_format: { type: "json_object" },
+            thinkingBudget: 5000, // 思考モード: 複雑な手書きOCRの精度向上のため
           });
 
           const rawContent = response.choices[0]?.message?.content;
@@ -226,7 +227,7 @@ export const appRouter = router({
                   content: [
                     {
                       type: "text",
-                      text: "このスコアカード画像を読み取ってください。塗りつぶされた○と空白の○を正確に判定し、手書き数字を読み取って、JSON形式で返してください。",
+                      text: "このスコアカード画像を読み取ってください。各セクションを丁寧に確認し、塗りつぶされた○と空白の○を正確に判定して、JSON形式で返してください。",
                     },
                     {
                       type: "image_url",
@@ -236,6 +237,7 @@ export const appRouter = router({
                 },
               ],
               response_format: { type: "json_object" },
+              thinkingBudget: 5000,
             });
 
             const rawContent = response.choices[0]?.message?.content;
