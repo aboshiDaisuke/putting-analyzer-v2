@@ -90,7 +90,7 @@ export function convertOcrPuttToAppPutt(
     distPrev: ocrPutt.distPrev,
     result: convertResult(ocrPutt.result),
     lengthSteps: ocrPutt.lengthSteps,
-    lengthYards: ocrPutt.lengthMeters, // カードの "m" フィールド（DB列名は将来 lengthMeters にリネーム予定）
+    lengthMeters: ocrPutt.lengthMeters,
     distanceMeters,
     missedDirection: ocrPutt.missedDirection,
     touch: ocrPutt.touch,

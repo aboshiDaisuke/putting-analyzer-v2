@@ -172,7 +172,7 @@ interface DbPutt {
   distPrev: number | null;
   result: string | null;
   lengthSteps: number | null;
-  lengthYards: number | null;
+  lengthMeters: number | null;
   distanceMeters: number | null;
   missedDirection: number | null;
   touch: number | null;
@@ -233,7 +233,7 @@ function dbPuttToClient(db: DbPutt): PuttData {
     distPrev: db.distPrev,
     result: (db.result as PuttData["result"]) ?? null,
     lengthSteps: db.lengthSteps,
-    lengthYards: db.lengthYards,
+    lengthMeters: db.lengthMeters,
     distanceMeters: db.distanceMeters ?? 0,
     missedDirection: (db.missedDirection as PuttData["missedDirection"]) ?? null,
     touch: (db.touch as PuttData["touch"]) ?? null,
@@ -688,7 +688,7 @@ export async function saveHolesForRound(
       distPrev: putt.distPrev,
       result: putt.result ?? null,
       lengthSteps: putt.lengthSteps,
-      lengthYards: putt.lengthYards,
+      lengthMeters: putt.lengthMeters,
       distanceMeters: putt.distanceMeters,
       missedDirection: putt.missedDirection,
       touch: putt.touch,

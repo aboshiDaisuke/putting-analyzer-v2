@@ -107,7 +107,7 @@ export interface PuttData {
   distPrev: number | null; // カードの Dist(prev) yd - 前回パットからの残り距離
   result: ScoreResult | null; // カードの Result - 塗りつぶし選択
   lengthSteps: number | null; // カードの Length st - 歩数
-  lengthYards: number | null; // カードの Length m - メートル直入力（DB列名は旧称 "Yards"。将来 lengthMeters にリネーム予定）
+  lengthMeters: number | null; // カードの Length m - メートル直入力
   distanceMeters: number; // 計算された距離（メートル）= 歩数 × 歩幅
   missedDirection: MissedDirection | null; // カードの Missed Direction 1-5
   touch: PuttStrength | null; // カードの Touch(弱1-5強)
@@ -347,7 +347,7 @@ export function createDefaultPutt(strokeNumber: 1 | 2 | 3): PuttData {
     distPrev: null,
     result: null,
     lengthSteps: null,
-    lengthYards: null,
+    lengthMeters: null,
     distanceMeters: 0,
     missedDirection: null,
     touch: null,

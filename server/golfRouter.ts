@@ -82,7 +82,7 @@ const puttInputSchema = z.object({
   distPrev: z.number().int().nullable().optional(),
   result: scoreResultSchema.nullable().optional(),
   lengthSteps: z.number().int().nullable().optional(),
-  lengthYards: z.number().int().nullable().optional(),
+  lengthMeters: z.number().nullable().optional(),
   distanceMeters: z.number().nullable().optional(),
   missedDirection: z.number().int().min(1).max(5).nullable().optional(),
   touch: z.number().int().min(1).max(5).nullable().optional(),

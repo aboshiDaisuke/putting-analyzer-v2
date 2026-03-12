@@ -16,7 +16,7 @@ const createPutt = (overrides: Partial<PuttData> = {}): PuttData => ({
   distPrev: null,
   result: null,
   lengthSteps: null,
-  lengthYards: null,
+  lengthMeters: null,
   distanceMeters: 0,
   missedDirection: null,
   touch: null,

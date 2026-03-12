@@ -194,7 +194,7 @@ export const putts = pgTable("putts", {
   distPrev: integer("distPrev"), // 前パットからの残り距離(yd)
   result: scoreResultEnum("result"),
   lengthSteps: integer("lengthSteps"), // 歩数
-  lengthYards: integer("lengthYards"), // ヤード
+  lengthMeters: real("lengthMeters"), // メートル直入力
   distanceMeters: real("distanceMeters"), // 計算済み距離(m)
   missedDirection: integer("missedDirection"), // 1-5
   touch: integer("touch"), // 1-5

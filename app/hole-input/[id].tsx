@@ -89,7 +89,7 @@ export default function HoleInputScreen() {
   const [distPrev, setDistPrev] = useState("");
   const [result, setResult] = useState<ScoreResult | null>(null);
   const [lengthSteps, setLengthSteps] = useState("");
-  const [lengthYards, setLengthYards] = useState("");
+  const [lengthMeters, setLengthYards] = useState("");
   const [missedDirection, setMissedDirection] = useState<MissedDirection | null>(null);
   const [touch, setTouch] = useState<PuttStrength | null>(null);
   const [lineUD, setLineUD] = useState<SlopeUpDown>("flat");
@@ -149,7 +149,7 @@ export default function HoleInputScreen() {
     setDistPrev(putt.distPrev?.toString() || "");
     setResult(putt.result);
     setLengthSteps(putt.lengthSteps?.toString() || "");
-    setLengthYards(putt.lengthYards?.toString() || "");
+    setLengthYards(putt.lengthMeters?.toString() || "");
     setMissedDirection(putt.missedDirection);
     setTouch(putt.touch);
     setLineUD(putt.lineUD);
@@ -165,7 +165,7 @@ export default function HoleInputScreen() {
       distPrev: parseFloat(distPrev) || null,
       result,
       lengthSteps: steps || null,
-      lengthYards: parseFloat(lengthYards) || null,
+      lengthMeters: parseFloat(lengthMeters) || null,
       distanceMeters: calculateDistance(steps, strideLength),
       missedDirection,
       touch,
@@ -499,7 +499,7 @@ export default function HoleInputScreen() {
                   <Text className="text-muted text-xs mb-1">メートル (m)</Text>
                   <TextInput
                     className="bg-background border border-border rounded-lg px-3 py-3 text-foreground text-lg"
-                    value={lengthYards}
+                    value={lengthMeters}
                     onChangeText={setLengthYards}
                     placeholder="--"
                     placeholderTextColor={colors.muted}

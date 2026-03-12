@@ -8,6 +8,13 @@
       "when": 1772606210172,
       "tag": "0000_next_inertia",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1741737600000,
+      "tag": "0001_rename_length_yards_to_meters",
+      "breakpoints": true
     }
   ]
 }
