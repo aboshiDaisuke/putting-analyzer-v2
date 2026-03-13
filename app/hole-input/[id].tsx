@@ -94,7 +94,7 @@ export default function HoleInputScreen() {
   const [touch, setTouch] = useState<PuttStrength | null>(null);
   const [lineUD, setLineUD] = useState<SlopeUpDown>("flat");
   const [lineLR, setLineLR] = useState<SlopeLeftRight>("straight");
-  const [mental, setMental] = useState<MentalState>(3);
+  const [mental, setMental] = useState<MentalState | null>(3);
 
   // ラウンド終了確認UI
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);

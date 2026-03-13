@@ -536,7 +536,7 @@ export default function OcrReviewScreen() {
                   }}
                   value={item.date || ""}
                   onChangeText={(v) => updateHoleField(index, "date", v)}
-                  placeholder="MM/DD"
+                  placeholder="YYYYMMDD"
                   placeholderTextColor={colors.muted}
                 />
               </View>

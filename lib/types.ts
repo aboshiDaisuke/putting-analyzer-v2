@@ -113,7 +113,7 @@ export interface PuttData {
   touch: PuttStrength | null; // カードの Touch(弱1-5強)
   lineUD: SlopeUpDown; // カードの Line(U/D): F, U, D, UD, DU
   lineLR: SlopeLeftRight; // カードの Line(L/R): St, L, R, LR, RL
-  mental: MentalState; // カードの Mental(P/N): P, 1, 2, 3, 4, 5, N
+  mental: MentalState | null; // カードの Mental(P/N): P, 1, 2, 3, 4, 5, N（未記入時はnull）
 }
 
 // ホールデータ

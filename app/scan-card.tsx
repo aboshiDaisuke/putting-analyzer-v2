@@ -64,23 +64,19 @@ export default function ScanCardScreen() {
   const [analysisResults, setAnalysisResults] = useState<any[]>([]);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
-  // タップでピント合わせ
-  const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | undefined>(undefined);
+  // タップフォーカスリング（UIフィードバック用のみ。expo-camera@17にfocusPoint propはない）
   const [focusRing, setFocusRing] = useState<{ x: number; y: number } | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // ライト（トーチ）
   const [torchEnabled, setTorchEnabled] = useState(false);
 
   const handleTapToFocus = (pageX: number, pageY: number) => {
-    const nx = Math.max(0, Math.min(1, pageX / screenWidth));
-    const ny = Math.max(0, Math.min(1, pageY / screenHeight));
-    setFocusPoint({ x: nx, y: ny });
+    // expo-camera@17 では focusPoint prop が存在しないため、
+    // UIのフォーカスリング表示のみ（カメラは autofocus="on" に依存）
     setFocusRing({ x: pageX, y: pageY });
     if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
-    // 2.5秒後にフォーカスリングを消し、focusPointをリセットして連続AFに戻す
     focusTimerRef.current = setTimeout(() => {
       setFocusRing(null);
-      setFocusPoint(undefined);
     }, 2500);
   };
 
@@ -491,7 +487,6 @@ export default function ScanCardScreen() {
         style={{ flex: 1 }}
         facing="back"
         autofocus="on"
-        focusPoint={focusPoint}
         enableTorch={torchEnabled}
       >
         <View style={{ flex: 1 }}>

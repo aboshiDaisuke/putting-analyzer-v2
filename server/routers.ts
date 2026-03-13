@@ -263,7 +263,7 @@ export const appRouter = router({
                 },
               ],
               response_format: { type: "json_object" },
-              thinkingBudget: 5000,
+              // thinkingBudget: Vercel タイムアウト超過リスクのため無効
             });
 
             const rawContent = response.choices[0]?.message?.content;

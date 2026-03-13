@@ -244,12 +244,12 @@ function dbPuttToClient(db: DbPutt): PuttData {
 }
 
 function parseMentalState(v: string | null | undefined): PuttData["mental"] {
-  if (v === null || v === undefined) return 3;
+  if (v === null || v === undefined) return null;
   if (v === "P") return "P";
   if (v === "N") return "N";
   const n = parseInt(v, 10);
   if (n >= 1 && n <= 5) return n as 1 | 2 | 3 | 4 | 5;
-  return 3;
+  return null;
 }
 
 function dbHoleToClient(db: DbHole): HoleData {

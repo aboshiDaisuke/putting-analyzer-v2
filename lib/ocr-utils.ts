@@ -47,9 +47,9 @@ function convertLineLR(val: "St" | "L" | "R" | "LR" | "RL" | null): SlopeLeftRig
   return CARD_TO_APP.lineLR[val] || "straight";
 }
 
-// Mental変換
-function convertMental(mental: "P" | 1 | 2 | 3 | 4 | 5 | "N" | null): MentalState {
-  if (mental === null) return 3;
+// Mental変換（未記入はnullを返す。以前はデフォルト3を返していたが、未入力データの混入を防止）
+function convertMental(mental: "P" | 1 | 2 | 3 | 4 | 5 | "N" | null): MentalState | null {
+  if (mental === null) return null;
   return mental;
 }
 
@@ -115,10 +115,12 @@ export function convertOcrHoleToAppHole(
     if (putt) {
       putts.push(putt);
     }
-    // 最初のパットのResultをスコアとして使用
-    if (ocrPutt.puttNumber === 1 && ocrPutt.result) {
-      const converted = convertResult(ocrPutt.result);
-      if (converted) scoreResult = converted;
+    // Resultが見つかったら採用（1st → 2nd → 3rd の順で最初に見つかったものを使用）
+    if (!scoreResult || scoreResult === "par") {
+      if (ocrPutt.result) {
+        const converted = convertResult(ocrPutt.result);
+        if (converted) scoreResult = converted;
+      }
     }
   }
 
