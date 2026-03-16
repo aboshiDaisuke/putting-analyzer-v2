@@ -211,7 +211,8 @@ export const appRouter = router({
             },
           ],
           response_format: { type: "json_object" },
-          // thinkingBudget: Vercel タイムアウト超過リスクがあるため無効（思考モードは遅すぎる）
+          // 思考モード: 塗りつぶし判定・手書き数字の精度向上（1024で約15秒以内に収まる）
+          thinkingBudget: 1024,
         });
 
         const rawContent = response.choices[0]?.message?.content;
@@ -263,7 +264,7 @@ export const appRouter = router({
                 },
               ],
               response_format: { type: "json_object" },
-              // thinkingBudget: Vercel タイムアウト超過リスクのため無効
+              thinkingBudget: 1024,
             });
 
             const rawContent = response.choices[0]?.message?.content;

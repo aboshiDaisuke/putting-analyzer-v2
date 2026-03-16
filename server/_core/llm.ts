@@ -130,7 +130,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       : undefined;
 
   // generationConfig: JSON強制出力 + 思考モード（精度向上）
-  const generationConfig: Record<string, unknown> = {};
+  const generationConfig: Record<string, unknown> = {
+    // 決定論的出力: OCRのような正確性重視タスクではブレを排除する
+    temperature: 0,
+  };
   if (responseFormatType === "json_object") {
     // responseMimeType でモデルに JSON 出力を強制（テキスト指示より確実）
     generationConfig.responseMimeType = "application/json";
