@@ -29,15 +29,15 @@ interface CapturedImage {
 }
 
 // Vercel Serverless Functions の本文上限は 4.5MB。
-// iPhoneのJPEG(quality 0.92)は2〜5MB、base64で+33%になるため超過しやすい。
-// → アップロード前に最大1920px幅・quality 0.92 に圧縮して確実に上限内に収める。
-// quality 0.92: 手書き数字・塗りつぶし○の細部をJPEGアーティファクトなしで保持（0.85→0.92）
+// iPhoneのJPEG(quality 0.92, 2560px幅)は3〜6MB、base64で+33%になるため注意。
+// → アップロード前に最大2560px幅・quality 0.92 に圧縮。
+// 2560px: 手書き数字・塗りつぶし○の細部を高解像度で保持（1920→2560でOCR精度向上）
 // 圧縮失敗時は元のbase64にフォールバック。
 async function compressForUpload(uri: string, fallbackBase64: string): Promise<string> {
   try {
     const result = await ImageManipulator.manipulateAsync(
       uri,
-      [{ resize: { width: 1920 } }],
+      [{ resize: { width: 2560 } }],
       {
         compress: 0.92, // OCR精度向上: JPEGアーティファクト削減で手書き数字・塗りつぶし○の細部を保持
         format: ImageManipulator.SaveFormat.JPEG,

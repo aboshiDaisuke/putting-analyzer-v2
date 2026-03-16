@@ -214,8 +214,8 @@ export const appRouter = router({
             },
           ],
           response_format: { type: "json_object" },
-          // 思考モード: 塗りつぶし判定・手書き数字の精度向上（1024で約15秒以内に収まる）
-          thinkingBudget: 1024,
+          // 思考モード: 塗りつぶし判定・手書き数字の精度向上
+          thinkingBudget: 2048,
         });
 
         const rawContent = response.choices[0]?.message?.content;
@@ -267,7 +267,7 @@ export const appRouter = router({
                 },
               ],
               response_format: { type: "json_object" },
-              thinkingBudget: 1024,
+              thinkingBudget: 2048,
             });
 
             const rawContent = response.choices[0]?.message?.content;
