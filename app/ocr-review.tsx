@@ -97,7 +97,16 @@ export default function OcrReviewScreen() {
     if (data) {
       try {
         const parsed = JSON.parse(data);
-        setOcrResults(Array.isArray(parsed) ? parsed : [parsed]);
+        const results: OcrHoleData[] = Array.isArray(parsed) ? parsed : [parsed];
+
+        // ホール番号を撮影順（1, 2, 3...）に自動割当
+        // OCRのhole読み取りは不正確なため、順番で上書きする
+        const assigned = results.map((r, i) => ({
+          ...r,
+          hole: i + 1,
+        }));
+
+        setOcrResults(assigned);
       } catch (e) {
         console.error("Failed to parse OCR data:", e);
       }
