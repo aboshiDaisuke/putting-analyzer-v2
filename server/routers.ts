@@ -1,9 +1,27 @@
 import { z } from "zod";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import { storagePut, storageDelete } from "./storage";
 import { golfRouter } from "./golfRouter";
+
+// 空白テンプレート画像をbase64として起動時に1回だけ読み込む
+let TEMPLATE_BASE64: string | null = null;
+function getTemplateDataUri(): string | null {
+  if (TEMPLATE_BASE64 === null) {
+    try {
+      const templatePath = join(process.cwd(), "assets", "scorecard-template.jpg");
+      const buffer = readFileSync(templatePath);
+      TEMPLATE_BASE64 = `data:image/jpeg;base64,${buffer.toString("base64")}`;
+    } catch {
+      console.warn("scorecard-template.jpg not found, skipping template reference");
+      TEMPLATE_BASE64 = "";
+    }
+  }
+  return TEMPLATE_BASE64 || null;
+}
 
 const OCR_SYSTEM_PROMPT = `あなたはゴルフのパッティングスコアカード「Stroke Gained Putting (OCR版)」を読み取る専門のOCRシステムです。
 
@@ -179,29 +197,30 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         // data: URI を構築して llm.ts の inline image パスを使う
         const dataUri = `data:${input.mimeType};base64,${input.base64}`;
+        const templateUri = getTemplateDataUri();
+
+        // ユーザーメッセージ: テンプレート参照画像（あれば）+ 記入済みカード
+        const userContent: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail: "high" } }> = [
+          {
+            type: "text",
+            text: templateUri
+              ? "1枚目は空白テンプレート（参照用）、2枚目が記入済みカードです。テンプレートと比較して、印がついている枠を特定してください。\n注意点:\n- Dist(prev)欄の手書き数字を必ず確認すること（枠内に数字があれば読み取る）\n- Length(st/m)欄の手書き数字も必ず確認すること\n- 選択肢は□枠の位置（左から何番目か）で判定すること。塗りつぶされた枠内の文字を読もうとしないこと"
+              : "このスコアカード画像を読み取ってJSON形式で返してください。\n注意点:\n- Dist(prev)欄の手書き数字を必ず確認すること（枠内に数字があれば読み取る）\n- Length(st/m)欄の手書き数字も必ず確認すること\n- 選択肢は□枠の位置（左から何番目か）で判定すること。塗りつぶされた枠内の文字を読もうとしないこと",
+          },
+        ];
+        // テンプレート参照画像を先に追加（比較の基準）
+        if (templateUri) {
+          userContent.push({ type: "image_url", image_url: { url: templateUri, detail: "high" } });
+        }
+        // 記入済みカード
+        userContent.push({ type: "image_url", image_url: { url: dataUri, detail: "high" } });
 
         const response = await invokeLLM({
           messages: [
             { role: "system", content: OCR_SYSTEM_PROMPT },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: "このスコアカード画像を読み取ってJSON形式で返してください。\n注意点:\n- Dist(prev)欄の手書き数字を必ず確認すること（枠内に数字があれば読み取る）\n- Length(st/m)欄の手書き数字も必ず確認すること\n- 選択肢は□枠の位置（左から何番目か）で判定すること。塗りつぶされた枠内の文字を読もうとしないこと",
-                },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: dataUri,
-                    detail: "high",
-                  },
-                },
-              ],
-            },
+            { role: "user", content: userContent },
           ],
           response_format: { type: "json_object" },
-          // 思考モード: 塗りつぶし判定・手書き数字の精度向上
           thinkingBudget: 2048,
         });
 
@@ -220,7 +239,7 @@ export const appRouter = router({
         }
       }),
 
-    // 複数枚のスコアカードを一括解析
+    // 複数枚のスコアカードを一括解析（並列処理）
     analyzeBatch: publicProcedure
       .input(
         z.object({
@@ -233,25 +252,29 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
-        const results = [];
-        for (const image of input.images) {
+        const templateUri = getTemplateDataUri();
+        const CONCURRENCY = 3; // Gemini API レート制限を考慮して同時3件
+
+        // 1枚のカードを解析する関数
+        async function analyzeOne(image: { url: string; key?: string }) {
           try {
+            const userContent: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail: "high" } }> = [
+              {
+                type: "text",
+                text: templateUri
+                  ? "1枚目は空白テンプレート（参照用）、2枚目が記入済みカードです。テンプレートと比較して、印がついている枠を特定してください。\n注意点:\n- Dist(prev)欄の手書き数字を必ず確認すること（枠内に数字があれば読み取る）\n- Length(st/m)欄の手書き数字も必ず確認すること\n- 選択肢は□枠の位置（左から何番目か）で判定すること。塗りつぶされた枠内の文字を読もうとしないこと"
+                  : "このスコアカード画像を読み取ってJSON形式で返してください。\n注意点:\n- Dist(prev)欄の手書き数字を必ず確認すること（枠内に数字があれば読み取る）\n- Length(st/m)欄の手書き数字も必ず確認すること\n- 選択肢は□枠の位置（左から何番目か）で判定すること。塗りつぶされた枠内の文字を読もうとしないこと",
+              },
+            ];
+            if (templateUri) {
+              userContent.push({ type: "image_url", image_url: { url: templateUri, detail: "high" } });
+            }
+            userContent.push({ type: "image_url", image_url: { url: image.url, detail: "high" } });
+
             const response = await invokeLLM({
               messages: [
                 { role: "system", content: OCR_SYSTEM_PROMPT },
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "text",
-                      text: "このスコアカード画像を読み取ってJSON形式で返してください。\n注意点:\n- Dist(prev)欄の手書き数字を必ず確認すること（枠内に数字があれば読み取る）\n- Length(st/m)欄の手書き数字も必ず確認すること\n- 選択肢は□枠の位置（左から何番目か）で判定すること。塗りつぶされた枠内の文字を読もうとしないこと",
-                    },
-                    {
-                      type: "image_url",
-                      image_url: { url: image.url, detail: "high" },
-                    },
-                  ],
-                },
+                { role: "user", content: userContent },
               ],
               response_format: { type: "json_object" },
               thinkingBudget: 2048,
@@ -260,18 +283,24 @@ export const appRouter = router({
             const rawContent = response.choices[0]?.message?.content;
             if (rawContent) {
               const contentStr = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
-              results.push({ imageUrl: image.url, success: true as const, data: JSON.parse(contentStr) });
-            } else {
-              results.push({ imageUrl: image.url, success: false as const, data: null });
+              return { imageUrl: image.url, success: true as const, data: JSON.parse(contentStr) };
             }
+            return { imageUrl: image.url, success: false as const, data: null };
           } catch (error) {
-            results.push({ imageUrl: image.url, success: false, data: null, error: String(error) });
+            return { imageUrl: image.url, success: false as const, data: null, error: String(error) };
           } finally {
-            // 解析完了後（成功・失敗問わず）、ストレージから画像を削除
             if (image.key) {
               await storageDelete(image.key);
             }
           }
+        }
+
+        // 並列実行（同時CONCURRENCY件ずつ）
+        const results: Awaited<ReturnType<typeof analyzeOne>>[] = [];
+        for (let i = 0; i < input.images.length; i += CONCURRENCY) {
+          const chunk = input.images.slice(i, i + CONCURRENCY);
+          const chunkResults = await Promise.all(chunk.map(analyzeOne));
+          results.push(...chunkResults);
         }
         return { results };
       }),
