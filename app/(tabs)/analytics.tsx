@@ -237,23 +237,35 @@ export default function AnalyticsScreen() {
               </Text>
               {summary.greenSpeedStats
                 .filter((s) => s.rounds > 0)
-                .map((stat) => (
-                  <View
-                    key={stat.speedRange}
-                    className="flex-row items-center justify-between py-2 border-b border-border"
-                  >
-                    <Text className="text-foreground">{stat.speedRange}</Text>
-                    <View className="flex-row items-baseline">
-                      <Text className="text-xl font-bold text-foreground">
-                        {stat.averagePutts.toFixed(2)}
-                      </Text>
-                      <Text className="text-muted text-sm ml-1">/H</Text>
-                      <Text className="text-muted text-xs ml-2">
-                        ({stat.rounds}R)
-                      </Text>
+                .map((stat, _, arr) => {
+                  const maxValue = Math.max(...arr.map((s) => s.averagePutts), 0);
+                  const barWidth = maxValue > 0 ? (stat.averagePutts / maxValue) * 100 : 0;
+                  return (
+                    <View
+                      key={stat.speedRange}
+                      className="py-2 border-b border-border"
+                    >
+                      <View className="flex-row items-center justify-between mb-1">
+                        <Text className="text-foreground">{stat.speedRange}</Text>
+                        <View className="flex-row items-baseline">
+                          <Text className="text-xl font-bold text-foreground">
+                            {stat.averagePutts.toFixed(2)}
+                          </Text>
+                          <Text className="text-muted text-sm ml-1">/H</Text>
+                          <Text className="text-muted text-xs ml-2">
+                            ({stat.rounds}R)
+                          </Text>
+                        </View>
+                      </View>
+                      <View className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+                        <View
+                          className="h-full bg-primary rounded-full"
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
               {summary.greenSpeedStats.every((s) => s.rounds === 0) && (
                 <Text className="text-muted text-center py-4">データなし</Text>
               )}
@@ -420,31 +432,43 @@ function MetadataSection({
   title: string;
   data: MetadataAvgPuttsItem[];
 }) {
+  const maxValue = Math.max(...data.map((d) => d.averagePutts), 0);
   return (
     <View className="bg-surface rounded-2xl p-4 border border-border">
       <Text className="text-lg font-semibold text-foreground mb-4">
         {title}
       </Text>
       {data.length > 0 ? (
-        data.map((stat) => (
-          <View
-            key={stat.label}
-            className="flex-row items-center justify-between py-2 border-b border-border"
-          >
-            <Text className="text-foreground flex-1" numberOfLines={1}>
-              {stat.label}
-            </Text>
-            <View className="flex-row items-baseline">
-              <Text className="text-xl font-bold text-foreground">
-                {stat.averagePutts.toFixed(2)}
-              </Text>
-              <Text className="text-muted text-sm ml-1">/H</Text>
-              <Text className="text-muted text-xs ml-2">
-                ({stat.rounds}R)
-              </Text>
+        data.map((stat) => {
+          const barWidth = maxValue > 0 ? (stat.averagePutts / maxValue) * 100 : 0;
+          return (
+            <View
+              key={stat.label}
+              className="py-2 border-b border-border"
+            >
+              <View className="flex-row items-center justify-between mb-1">
+                <Text className="text-foreground flex-1" numberOfLines={1}>
+                  {stat.label}
+                </Text>
+                <View className="flex-row items-baseline">
+                  <Text className="text-xl font-bold text-foreground">
+                    {stat.averagePutts.toFixed(2)}
+                  </Text>
+                  <Text className="text-muted text-sm ml-1">/H</Text>
+                  <Text className="text-muted text-xs ml-2">
+                    ({stat.rounds}R)
+                  </Text>
+                </View>
+              </View>
+              <View className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+                <View
+                  className="h-full bg-primary rounded-full"
+                  style={{ width: `${barWidth}%` }}
+                />
+              </View>
             </View>
-          </View>
-        ))
+          );
+        })
       ) : (
         <Text className="text-muted text-center py-4">データなし</Text>
       )}
