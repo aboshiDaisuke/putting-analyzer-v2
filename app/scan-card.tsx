@@ -87,7 +87,7 @@ export default function ScanCardScreen() {
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.85,
+        quality: 1.0,
         base64: true,
       });
 
@@ -108,7 +108,7 @@ export default function ScanCardScreen() {
   const handlePickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      quality: 0.85,
+      quality: 1.0,
       base64: true,
       allowsMultipleSelection: true,
     });
