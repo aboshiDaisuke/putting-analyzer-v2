@@ -3,7 +3,6 @@ import {
   Text,
   View,
   TouchableOpacity,
-  ScrollView,
   Alert,
   TextInput,
   FlatList,
@@ -15,23 +14,22 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import type { OcrHoleData, OcrPuttData } from "@/lib/ocr-utils";
 import { convertOcrBatchToHoles } from "@/lib/ocr-utils";
-import { saveRound, saveHolesForRound, updateRound, getUserProfile } from "@/lib/storage";
+import { saveRound, saveHolesForRound, updateRound } from "@/lib/storage";
 import type { Round } from "@/lib/types";
 
 // カード表記のラベル
 const RESULT_OPTIONS = ["E", "Ba", "P", "Bo", "D+"] as const;
-const LINE_UD_OPTIONS = ["F", "U", "D", "UD", "DU"] as const;
-const LINE_LR_OPTIONS = ["St", "L", "R", "LR", "RL"] as const;
-const MENTAL_OPTIONS = ["P", 1, 2, 3, 4, 5, "N"] as const;
+const LINE_UD_OPTIONS = ["F", "U", "D"] as const;
+const LINE_LR_OPTIONS = ["St", "L", "R"] as const;
 
 const RESULT_LABELS: Record<string, string> = {
   E: "E", Ba: "Ba", P: "P", Bo: "Bo", "D+": "D+",
 };
 const LINE_UD_LABELS: Record<string, string> = {
-  F: "F", U: "U", D: "D", UD: "UD", DU: "DU",
+  F: "F", U: "U", D: "D",
 };
 const LINE_LR_LABELS: Record<string, string> = {
-  St: "St", L: "L", R: "R", LR: "LR", RL: "RL",
+  St: "St", L: "L", R: "R",
 };
 
 // 小さな選択ボタン
@@ -142,10 +140,7 @@ export default function OcrReviewScreen() {
 
     setIsSaving(true);
     try {
-      const profile = await getUserProfile();
-      const strideLength = profile?.strideLength || 0.7;
-
-      const holes = convertOcrBatchToHoles(ocrResults, strideLength);
+      const holes = convertOcrBatchToHoles(ocrResults);
 
       if (holes.length === 0) {
         Alert.alert("エラー", "有効なホールデータがありません");
@@ -248,13 +243,10 @@ export default function OcrReviewScreen() {
   ) => {
     const isEmpty =
       !puttData.cupIn &&
-      puttData.distPrev === null &&
-      puttData.lengthSteps === null &&
       puttData.result === null &&
-      puttData.touch === null &&
+      puttData.lengthMeters === null &&
       puttData.lineUD === null &&
-      puttData.lineLR === null &&
-      puttData.mental === null;
+      puttData.lineLR === null;
 
     const puttLabel = puttData.puttNumber === 1 ? "1st" : puttData.puttNumber === 2 ? "2nd" : "3rd";
 
@@ -307,33 +299,6 @@ export default function OcrReviewScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Dist(prev) */}
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-          <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Dist(prev):</Text>
-          <TextInput
-            style={{
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              borderRadius: 6,
-              paddingHorizontal: 8,
-              paddingVertical: 3,
-              color: colors.foreground,
-              width: 50,
-              fontSize: 13,
-              textAlign: "center",
-            }}
-            value={puttData.distPrev?.toString() || ""}
-            onChangeText={(v) =>
-              updatePuttField(holeIndex, puttIndex, "distPrev", v ? parseInt(v, 10) : null)
-            }
-            keyboardType="number-pad"
-            placeholder="--"
-            placeholderTextColor={colors.muted}
-          />
-          <Text style={{ color: colors.muted, fontSize: 11, marginLeft: 4 }}>yd</Text>
-        </View>
-
         {/* Result */}
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
           <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Result:</Text>
@@ -346,31 +311,9 @@ export default function OcrReviewScreen() {
           />
         </View>
 
-        {/* Length */}
+        {/* Length (m) */}
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
           <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Length:</Text>
-          <TextInput
-            style={{
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              borderRadius: 6,
-              paddingHorizontal: 8,
-              paddingVertical: 3,
-              color: colors.foreground,
-              width: 50,
-              fontSize: 13,
-              textAlign: "center",
-            }}
-            value={puttData.lengthSteps?.toString() || ""}
-            onChangeText={(v) =>
-              updatePuttField(holeIndex, puttIndex, "lengthSteps", v ? parseInt(v, 10) : null)
-            }
-            keyboardType="number-pad"
-            placeholder="--"
-            placeholderTextColor={colors.muted}
-          />
-          <Text style={{ color: colors.muted, fontSize: 11, marginLeft: 4, marginRight: 8 }}>st</Text>
           <TextInput
             style={{
               backgroundColor: colors.surface,
@@ -395,29 +338,6 @@ export default function OcrReviewScreen() {
           <Text style={{ color: colors.muted, fontSize: 11, marginLeft: 4 }}>m</Text>
         </View>
 
-        {/* Missed Direction */}
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-          <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Missed Dir:</Text>
-          <MiniSelect
-            options={[1, 2, 3, 4, 5]}
-            value={puttData.missedDirection}
-            onChange={(v: any) => updatePuttField(holeIndex, puttIndex, "missedDirection", v)}
-            colors={colors}
-          />
-        </View>
-
-        {/* Touch */}
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-          <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Touch:</Text>
-          <MiniSelect
-            options={[1, 2, 3, 4, 5]}
-            value={puttData.touch}
-            onChange={(v: any) => updatePuttField(holeIndex, puttIndex, "touch", v)}
-            colors={colors}
-          />
-          <Text style={{ color: colors.muted, fontSize: 10, marginLeft: 4 }}>弱←→強</Text>
-        </View>
-
         {/* Line U/D */}
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
           <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Line(U/D):</Text>
@@ -431,24 +351,13 @@ export default function OcrReviewScreen() {
         </View>
 
         {/* Line L/R */}
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
           <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Line(L/R):</Text>
           <MiniSelect
             options={LINE_LR_OPTIONS}
             value={puttData.lineLR}
             onChange={(v: any) => updatePuttField(holeIndex, puttIndex, "lineLR", v)}
             labels={LINE_LR_LABELS}
-            colors={colors}
-          />
-        </View>
-
-        {/* Mental */}
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Mental:</Text>
-          <MiniSelect
-            options={MENTAL_OPTIONS}
-            value={puttData.mental}
-            onChange={(v: any) => updatePuttField(holeIndex, puttIndex, "mental", v)}
             colors={colors}
           />
         </View>
@@ -463,14 +372,14 @@ export default function OcrReviewScreen() {
     // サマリー情報
     const firstPutt = item.putts[0];
     const resultText = firstPutt?.result || "--";
-    const stepsText = firstPutt?.lengthSteps ? `${firstPutt.lengthSteps}歩` : "--";
+    const lengthText = firstPutt?.lengthMeters ? `${firstPutt.lengthMeters}m` : "--";
     const puttCount = item.putts.filter(
       (p) =>
         p.cupIn ||
-        p.distPrev !== null ||
         p.result !== null ||
-        p.lengthSteps !== null ||
-        p.touch !== null
+        p.lengthMeters !== null ||
+        p.lineUD !== null ||
+        p.lineLR !== null
     ).length;
 
     return (
@@ -489,7 +398,7 @@ export default function OcrReviewScreen() {
                 Hole {holeNum} · {puttCount}パット
               </Text>
               <Text className="text-muted text-xs">
-                Result: {resultText} · Length: {stepsText}
+                Result: {resultText} · Length: {lengthText}
               </Text>
             </View>
           </View>
