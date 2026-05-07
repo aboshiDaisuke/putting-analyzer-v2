@@ -21,14 +21,14 @@
                 margin: 0;
             }
         }
-        /* 数値記入用ボックス（OCR精度重視サイズ） */
-        .box { width: 22px; height: 22px; border: 1px solid black; display: inline-block; }
-        .box-right { width: 22px; height: 22px; border-top: 1px solid black; border-bottom: 1px solid black; border-right: 1px solid black; display: inline-block; }
+        /* 数値記入・選択用ボックス（OCR精度重視サイズ） */
+        .box { width: 28px; height: 28px; border: 1px solid black; display: inline-block; }
+        .box-right { width: 28px; height: 28px; border-top: 1px solid black; border-bottom: 1px solid black; border-right: 1px solid black; display: inline-block; }
         /* ヘッダー用ボックス（小さめ） */
         .box-sm { width: 18px; height: 18px; border: 1px solid black; display: inline-block; }
         .box-sm-right { width: 18px; height: 18px; border-top: 1px solid black; border-bottom: 1px solid black; border-right: 1px solid black; display: inline-block; }
         /* チェック用ボックス（In判定） */
-        .box-check { width: 20px; height: 20px; border: 2px solid black; display: inline-block; }
+        .box-check { width: 26px; height: 26px; border: 2px solid black; display: inline-block; }
     </style>
 </head>
 <body class="bg-gray-200 py-8 flex flex-col items-center text-sm">
@@ -102,19 +102,28 @@
 
                 <div class="flex flex-col gap-1.5 mt-1.5">
                     <!-- 行1: In / Result -->
-                    <div class="flex items-center justify-between w-full">
+                    <div class="flex items-end justify-between w-full">
                         <div class="flex items-center gap-1">
                             <span class="font-bold">In:</span>
                             <div class="box-check"></div>
                         </div>
-                        <div class="flex items-center gap-1">
-                            <span class="font-bold">Putt/Result:</span>
-                            <div class="flex">
-                                <div class="box text-center leading-[22px] text-[7px] font-bold">E</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">Ba</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">P</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">Bo</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">D+</div>
+                        <div class="flex items-end gap-1">
+                            <span class="font-bold pb-0.5">Putt/Result:</span>
+                            <div class="flex flex-col">
+                                <div class="flex">
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">E</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">Ba</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">P</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">Bo</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">D+</div>
+                                </div>
+                                <div class="flex">
+                                    <div class="box"></div>
+                                    <div class="box-right"></div>
+                                    <div class="box-right"></div>
+                                    <div class="box-right"></div>
+                                    <div class="box-right"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -129,18 +138,32 @@
                     </div>
 
                     <!-- 行4: Line U/D / Line L/R -->
-                    <div class="flex items-center">
-                        <span class="shrink-0" style="width:54px">Line(U/D):</span>
-                        <div class="flex shrink-0">
-                            <div class="box text-center leading-[22px] text-[7px] font-bold">F</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">U</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">D</div>
+                    <div class="flex items-end">
+                        <span class="shrink-0 pb-0.5" style="width:54px">Line(U/D):</span>
+                        <div class="flex flex-col shrink-0">
+                            <div class="flex">
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">F</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">U</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">D</div>
+                            </div>
+                            <div class="flex">
+                                <div class="box"></div>
+                                <div class="box-right"></div>
+                                <div class="box-right"></div>
+                            </div>
                         </div>
-                        <span class="shrink-0 ml-3" style="width:54px">Line(L/R):</span>
-                        <div class="flex shrink-0">
-                            <div class="box text-center leading-[22px] text-[7px] font-bold">St</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">L</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">R</div>
+                        <span class="shrink-0 ml-3 pb-0.5" style="width:54px">Line(L/R):</span>
+                        <div class="flex flex-col shrink-0">
+                            <div class="flex">
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">St</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">L</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">R</div>
+                            </div>
+                            <div class="flex">
+                                <div class="box"></div>
+                                <div class="box-right"></div>
+                                <div class="box-right"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -152,19 +175,28 @@
 
                 <div class="flex flex-col gap-1.5 mt-1.5">
                     <!-- 行1: In / Result -->
-                    <div class="flex items-center justify-between w-full">
+                    <div class="flex items-end justify-between w-full">
                         <div class="flex items-center gap-1">
                             <span class="font-bold">In:</span>
                             <div class="box-check"></div>
                         </div>
-                        <div class="flex items-center gap-1">
-                            <span class="font-bold">Putt/Result:</span>
-                            <div class="flex">
-                                <div class="box text-center leading-[22px] text-[7px] font-bold">E</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">Ba</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">P</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">Bo</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">D+</div>
+                        <div class="flex items-end gap-1">
+                            <span class="font-bold pb-0.5">Putt/Result:</span>
+                            <div class="flex flex-col">
+                                <div class="flex">
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">E</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">Ba</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">P</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">Bo</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">D+</div>
+                                </div>
+                                <div class="flex">
+                                    <div class="box"></div>
+                                    <div class="box-right"></div>
+                                    <div class="box-right"></div>
+                                    <div class="box-right"></div>
+                                    <div class="box-right"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -179,18 +211,32 @@
                     </div>
 
                     <!-- 行4: Line U/D / Line L/R -->
-                    <div class="flex items-center">
-                        <span class="shrink-0" style="width:54px">Line(U/D):</span>
-                        <div class="flex shrink-0">
-                            <div class="box text-center leading-[22px] text-[7px] font-bold">F</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">U</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">D</div>
+                    <div class="flex items-end">
+                        <span class="shrink-0 pb-0.5" style="width:54px">Line(U/D):</span>
+                        <div class="flex flex-col shrink-0">
+                            <div class="flex">
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">F</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">U</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">D</div>
+                            </div>
+                            <div class="flex">
+                                <div class="box"></div>
+                                <div class="box-right"></div>
+                                <div class="box-right"></div>
+                            </div>
                         </div>
-                        <span class="shrink-0 ml-3" style="width:54px">Line(L/R):</span>
-                        <div class="flex shrink-0">
-                            <div class="box text-center leading-[22px] text-[7px] font-bold">St</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">L</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">R</div>
+                        <span class="shrink-0 ml-3 pb-0.5" style="width:54px">Line(L/R):</span>
+                        <div class="flex flex-col shrink-0">
+                            <div class="flex">
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">St</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">L</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">R</div>
+                            </div>
+                            <div class="flex">
+                                <div class="box"></div>
+                                <div class="box-right"></div>
+                                <div class="box-right"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -202,19 +248,28 @@
 
                 <div class="flex flex-col gap-1.5 mt-1.5">
                     <!-- 行1: In / Result -->
-                    <div class="flex items-center justify-between w-full">
+                    <div class="flex items-end justify-between w-full">
                         <div class="flex items-center gap-1">
                             <span class="font-bold">In:</span>
                             <div class="box-check"></div>
                         </div>
-                        <div class="flex items-center gap-1">
-                            <span class="font-bold">Putt/Result:</span>
-                            <div class="flex">
-                                <div class="box text-center leading-[22px] text-[7px] font-bold">E</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">Ba</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">P</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">Bo</div>
-                                <div class="box-right text-center leading-[22px] text-[7px] font-bold">D+</div>
+                        <div class="flex items-end gap-1">
+                            <span class="font-bold pb-0.5">Putt/Result:</span>
+                            <div class="flex flex-col">
+                                <div class="flex">
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">E</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">Ba</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">P</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">Bo</div>
+                                    <div class="w-7 text-center text-[7px] font-bold leading-none">D+</div>
+                                </div>
+                                <div class="flex">
+                                    <div class="box"></div>
+                                    <div class="box-right"></div>
+                                    <div class="box-right"></div>
+                                    <div class="box-right"></div>
+                                    <div class="box-right"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -229,18 +284,32 @@
                     </div>
 
                     <!-- 行4: Line U/D / Line L/R -->
-                    <div class="flex items-center">
-                        <span class="shrink-0" style="width:54px">Line(U/D):</span>
-                        <div class="flex shrink-0">
-                            <div class="box text-center leading-[22px] text-[7px] font-bold">F</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">U</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">D</div>
+                    <div class="flex items-end">
+                        <span class="shrink-0 pb-0.5" style="width:54px">Line(U/D):</span>
+                        <div class="flex flex-col shrink-0">
+                            <div class="flex">
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">F</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">U</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">D</div>
+                            </div>
+                            <div class="flex">
+                                <div class="box"></div>
+                                <div class="box-right"></div>
+                                <div class="box-right"></div>
+                            </div>
                         </div>
-                        <span class="shrink-0 ml-3" style="width:54px">Line(L/R):</span>
-                        <div class="flex shrink-0">
-                            <div class="box text-center leading-[22px] text-[7px] font-bold">St</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">L</div>
-                            <div class="box-right text-center leading-[22px] text-[7px] font-bold">R</div>
+                        <span class="shrink-0 ml-3 pb-0.5" style="width:54px">Line(L/R):</span>
+                        <div class="flex flex-col shrink-0">
+                            <div class="flex">
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">St</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">L</div>
+                                <div class="w-7 text-center text-[7px] font-bold leading-none">R</div>
+                            </div>
+                            <div class="flex">
+                                <div class="box"></div>
+                                <div class="box-right"></div>
+                                <div class="box-right"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -248,12 +317,10 @@
 
             <!-- 凡例 -->
             <div class="mt-2 border border-gray-400 p-1.5 text-[7px] leading-snug">
-                <p class="font-bold text-[8px] mb-0.5">■ 記入ガイド（各□に数字1つを記入 / In:カップイン時に✓）</p>
+                <p class="font-bold text-[8px] mb-0.5">■ 記入ガイド（該当の□に✓ / Length・Hole・Dateは数字を記入）</p>
                 <div class="flex flex-col gap-px">
-                    <p><b>Putt/Result:</b> 1=E(agle) 2=B(irdie) 3=P(ar) 4=Bo(gey) 5=D+</p>
-                    <p><b>Miss:</b> 1=左奥 2=左手前 3=手前 4=右手前 5=右奥</p>
-                    <p><b>Touch:</b> 弱1―2―3(適正)―4―5強 / <b>Mental:</b> 1=とてもP―3=普通―5=とてもN</p>
-                    <p><b>U/D:</b> 1=Flat 2=Up 3=Down 4=U→D 5=D→U / <b>L/R:</b> 1=St 2=L 3=R 4=L→R 5=R→L</p>
+                    <p><b>Putt/Result:</b> E=Eagle, Ba=Birdie, P=Par, Bo=Bogey, D+=Double Bogey以上</p>
+                    <p><b>Line(U/D):</b> F=Flat, U=Up, D=Down / <b>Line(L/R):</b> St=Straight, L=Left, R=Right</p>
                 </div>
             </div>
 
