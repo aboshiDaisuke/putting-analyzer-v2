@@ -69,3 +69,4 @@ ARCHITECTURE.pdf
 .env
 .env.*
 !.env.example
+.vercel

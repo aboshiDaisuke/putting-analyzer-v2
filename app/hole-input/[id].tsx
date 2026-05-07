@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ScrollView,
   Text,
@@ -100,6 +100,15 @@ export default function HoleInputScreen() {
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [validationWarning, setValidationWarning] = useState<string | null>(null);
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // タイマークリーンアップ
+  useEffect(() => {
+    return () => {
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -129,6 +138,7 @@ export default function HoleInputScreen() {
   }, [id, retryCount]);
 
   const loadHoleData = (roundData: Round, holeNum: number) => {
+    setValidationWarning(null);
     const hole = roundData.holes.find((h) => h.holeNumber === holeNum);
     if (hole && hole.putts.length > 0) {
       setScoreResult(hole.scoreResult);
@@ -175,6 +185,31 @@ export default function HoleInputScreen() {
     };
   };
 
+  // 非ブロッキングバリデーション（距離入力チェック）
+  const validatePutts = (puttList: PuttData[]): string | null => {
+    const hasMissingDistance = puttList.some((p) => {
+      const hasDistance =
+        (p.lengthSteps !== null && p.lengthSteps > 0) ||
+        (p.lengthMeters !== null && p.lengthMeters > 0);
+      return !hasDistance;
+    });
+    if (hasMissingDistance) return "距離が未入力のパットがあります";
+    return null;
+  };
+
+  // 特定ホールの距離データが不完全か判定
+  const isHoleIncomplete = (holeNum: number): boolean => {
+    if (!round) return false;
+    const hole = round.holes.find((h) => h.holeNumber === holeNum);
+    if (!hole || hole.putts.length === 0) return false;
+    return hole.putts.some((p) => {
+      const hasDistance =
+        (p.lengthSteps !== null && p.lengthSteps > 0) ||
+        (p.lengthMeters !== null && p.lengthMeters > 0);
+      return !hasDistance;
+    });
+  };
+
   const saveCurrentPutt = () => {
     const newPutts = [...putts];
     newPutts[currentPuttIndex] = getCurrentPuttData();
@@ -217,6 +252,16 @@ export default function HoleInputScreen() {
     setSaveError(null);
     const savedPutts = saveCurrentPutt();
     const totalPutts = savedPutts.length;
+
+    // 非ブロッキングバリデーション（保存は続行）
+    const warning = validatePutts(savedPutts);
+    if (warning) {
+      setValidationWarning(warning);
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+      warningTimerRef.current = setTimeout(() => setValidationWarning(null), 3000);
+    } else {
+      setValidationWarning(null);
+    }
 
     // Build the updated holes array in local state
     const updatedHoles = round.holes.map((h) =>
@@ -340,6 +385,19 @@ export default function HoleInputScreen() {
               >
                 {hole}H
               </Text>
+              {isHoleIncomplete(hole) && (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: 6,
+                    right: 4,
+                    width: 6,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: colors.warning,
+                  }}
+                />
+              )}
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -391,6 +449,31 @@ export default function HoleInputScreen() {
           {saveError && (
             <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginBottom: 16 }}>
               <Text style={{ color: "#991b1b", fontSize: 13 }}>{saveError}</Text>
+            </View>
+          )}
+
+          {/* バリデーション警告（非ブロッキング） */}
+          {validationWarning && (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: colors.warning + "1A",
+                borderWidth: 1,
+                borderColor: colors.warning + "4D",
+                borderRadius: 8,
+                padding: 12,
+                marginBottom: 16,
+                gap: 8,
+              }}
+            >
+              <IconSymbol name="flag.fill" size={16} color={colors.warning} />
+              <Text style={{ color: colors.warning, fontSize: 13, flex: 1 }}>
+                {validationWarning}
+              </Text>
+              <TouchableOpacity onPress={() => setValidationWarning(null)}>
+                <IconSymbol name="xmark.circle.fill" size={16} color={colors.muted} />
+              </TouchableOpacity>
             </View>
           )}
 

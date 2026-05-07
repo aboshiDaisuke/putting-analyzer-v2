@@ -7,8 +7,16 @@ import {
   SlopeStats,
   GreenSpeedStats,
   MentalStatsItem,
+  TouchStatsItem,
+  SlopeLeftRightStatsItem,
+  MissedDirectionStatsItem,
+  MetadataAvgPuttsItem,
   SlopeUpDown,
+  SlopeLeftRight,
   MentalState,
+  PuttStrength,
+  MissedDirection,
+  LABELS,
 } from './types';
 
 // 距離範囲の定義（メートル）
@@ -192,6 +200,111 @@ export function calculateMentalStats(rounds: Round[]): MentalStatsItem[] {
   });
 }
 
+// タッチ強度別カップイン率（1stパット）
+export function calculateTouchStats(rounds: Round[]): TouchStatsItem[] {
+  const firstPutts = extractFirstPutts(rounds);
+  const touches: PuttStrength[] = [1, 2, 3, 4, 5];
+
+  return touches.map(touch => {
+    const puttsWithTouch = firstPutts.filter(({ putt }) => putt.touch === touch);
+    const cupIns = puttsWithTouch.filter(({ putt }) => putt.cupIn).length;
+
+    return {
+      touch,
+      attempts: puttsWithTouch.length,
+      cupIns,
+      rate: puttsWithTouch.length > 0 ? (cupIns / puttsWithTouch.length) * 100 : 0,
+    };
+  });
+}
+
+// 左右傾斜別カップイン率（1stパット）
+export function calculateSlopeLeftRightStats(rounds: Round[]): SlopeLeftRightStatsItem[] {
+  const firstPutts = extractFirstPutts(rounds);
+  const slopes: SlopeLeftRight[] = ['straight', 'left', 'right', 'left_right', 'right_left'];
+
+  return slopes.map(slope => {
+    const puttsWithSlope = firstPutts.filter(({ putt }) => putt.lineLR === slope);
+    const cupIns = puttsWithSlope.filter(({ putt }) => putt.cupIn).length;
+
+    return {
+      slope,
+      attempts: puttsWithSlope.length,
+      cupIns,
+      rate: puttsWithSlope.length > 0 ? (cupIns / puttsWithSlope.length) * 100 : 0,
+    };
+  });
+}
+
+// ミス方向別傾向（cupIn=false の全パット対象）
+export function calculateMissedDirectionStats(rounds: Round[]): MissedDirectionStatsItem[] {
+  const allPutts = extractAllPutts(rounds);
+  const missedPutts = allPutts.filter(({ putt }) => !putt.cupIn && putt.missedDirection != null);
+  const totalMissed = missedPutts.length;
+  const directions: MissedDirection[] = [1, 2, 3, 4, 5];
+
+  return directions.map(direction => {
+    const count = missedPutts.filter(({ putt }) => putt.missedDirection === direction).length;
+
+    return {
+      direction,
+      count,
+      rate: totalMissed > 0 ? (count / totalMissed) * 100 : 0,
+    };
+  });
+}
+
+// メタデータ別平均パット/H の汎用ヘルパー
+function calculateMetadataAvgPutts(
+  rounds: Round[],
+  groupBy: (r: Round) => string,
+): MetadataAvgPuttsItem[] {
+  const groups = new Map<string, { totalPutts: number; totalHoles: number; rounds: number }>();
+
+  for (const round of rounds) {
+    const key = groupBy(round);
+    if (!key) continue;
+
+    const existing = groups.get(key) ?? { totalPutts: 0, totalHoles: 0, rounds: 0 };
+    existing.totalPutts += round.totalPutts;
+    existing.totalHoles += round.holes.length;
+    existing.rounds += 1;
+    groups.set(key, existing);
+  }
+
+  const result: MetadataAvgPuttsItem[] = [];
+  for (const [label, data] of groups) {
+    result.push({
+      label,
+      averagePutts: data.totalHoles > 0 ? data.totalPutts / data.totalHoles : 0,
+      rounds: data.rounds,
+    });
+  }
+
+  // ラウンド数の降順でソート
+  return result.sort((a, b) => b.rounds - a.rounds);
+}
+
+// パター別平均パット/H
+export function calculatePutterStats(rounds: Round[]): MetadataAvgPuttsItem[] {
+  return calculateMetadataAvgPutts(rounds, r => r.putterName || '不明');
+}
+
+// 芝の種類別平均パット/H
+export function calculateGrassTypeStats(rounds: Round[]): MetadataAvgPuttsItem[] {
+  return calculateMetadataAvgPutts(rounds, r => LABELS.grassType[r.grassType] || r.grassType);
+}
+
+// 天候別平均パット/H
+export function calculateWeatherStats(rounds: Round[]): MetadataAvgPuttsItem[] {
+  return calculateMetadataAvgPutts(rounds, r => LABELS.weather[r.weather] || r.weather);
+}
+
+// コース別平均パット/H
+export function calculateCourseStats(rounds: Round[]): MetadataAvgPuttsItem[] {
+  return calculateMetadataAvgPutts(rounds, r => r.courseName || '不明');
+}
+
 // 総合分析サマリー
 export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
   const basicStats = calculateBasicStats(rounds);
@@ -206,6 +319,14 @@ export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
     slopeStats: calculateSlopeStats(rounds),
     greenSpeedStats: calculateGreenSpeedStats(rounds),
     mentalStats: calculateMentalStats(rounds),
+    // 新規7項目
+    touchStats: calculateTouchStats(rounds),
+    slopeLeftRightStats: calculateSlopeLeftRightStats(rounds),
+    missedDirectionStats: calculateMissedDirectionStats(rounds),
+    putterStats: calculatePutterStats(rounds),
+    grassTypeStats: calculateGrassTypeStats(rounds),
+    weatherStats: calculateWeatherStats(rounds),
+    courseStats: calculateCourseStats(rounds),
   };
 }
 

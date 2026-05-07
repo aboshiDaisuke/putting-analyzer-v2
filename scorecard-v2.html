@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stroke Gained Putting (OCR版 v2)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        @media print {
+            body { background-color: white; margin: 0; }
+            .no-print { display: none !important; }
+            .print-container {
+                box-shadow: none !important;
+                margin: 0 auto !important;
+                width: 210mm !important;
+                height: 297mm !important;
+            }
+            @page {
+                size: A4 portrait;
+                margin: 0;
+            }
+        }
+        /* 数値記入用ボックス（OCR精度重視サイズ） */
+        .box { width: 22px; height: 22px; border: 1px solid black; display: inline-block; }
+        .box-right { width: 22px; height: 22px; border-top: 1px solid black; border-bottom: 1px solid black; border-right: 1px solid black; display: inline-block; }
+        /* ヘッダー用ボックス（小さめ） */
+        .box-sm { width: 18px; height: 18px; border: 1px solid black; display: inline-block; }
+        .box-sm-right { width: 18px; height: 18px; border-top: 1px solid black; border-bottom: 1px solid black; border-right: 1px solid black; display: inline-block; }
+        /* チェック用ボックス（In判定） */
+        .box-check { width: 20px; height: 20px; border: 2px solid black; display: inline-block; }
+    </style>
+</head>
+<body class="bg-gray-200 py-8 flex flex-col items-center text-sm">
+
+    <!-- ダウンロード用ボタン -->
+    <div class="no-print flex gap-4 mb-6">
+        <button onclick="downloadPDF()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow flex items-center gap-2 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            PDFを直接ダウンロード
+        </button>
+        <button onclick="window.print()" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded shadow flex items-center gap-2 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6.728 6.728A2.25 2.25 0 004.5 8.956v8.088a2.25 2.25 0 002.25 2.25h10.5a2.25 2.25 0 002.25-2.25v-8.088a2.25 2.25 0 00-2.25-2.25H6.728z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 6V4.5a2.25 2.25 0 012.25-2.25h7.5A2.25 2.25 0 0118 4.5V6" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18 17.25v2.25A2.25 2.25 0 0115.75 21H8.25A2.25 2.25 0 016 18.75v-2.25" />
+            </svg>
+            ブラウザ機能で印刷・PDF保存
+        </button>
+    </div>
+
+    <!-- A4用紙サイズのキャンバス -->
+    <div id="pdf-wrapper" class="print-container bg-white w-[210mm] min-h-[297mm] shadow-lg flex flex-col justify-center items-center relative box-border font-sans text-black">
+
+        <div class="mb-6 text-gray-500 text-xs flex flex-col items-center gap-1 no-print">
+            <p class="font-bold text-sm">【印刷時のご注意】</p>
+            <p>※プリンターの設定で「実際のサイズ（100%）」を選択してA4用紙に印刷してください。</p>
+        </div>
+
+        <!-- 10.8cm x 17.8cm 用紙サイズのコンテナ -->
+        <div id="scorecard" class="relative w-[108mm] h-[178mm] border-[1.5px] border-dashed border-gray-400 px-4 py-5 box-border bg-white">
+
+            <div class="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-white px-2 text-gray-500 text-[10px] whitespace-nowrap">
+                ✂ 切り取り線 (10.8cm × 17.8cm) ✂
+            </div>
+
+            <!-- 四隅のマーク (OCR用) -->
+            <div class="absolute top-4 left-4 w-3 h-3 bg-black"></div>
+            <div class="absolute top-4 right-4 w-3 h-3 bg-black"></div>
+            <div class="absolute bottom-4 left-4 w-3 h-3 bg-black"></div>
+            <div class="absolute bottom-4 right-4 w-3 h-3 bg-black"></div>
+
+            <!-- タイトル -->
+            <h1 class="text-center text-[12px] font-bold mb-3 mt-1">Stroke Gained Putting v2</h1>
+
+            <!-- ヘッダー情報 -->
+            <div class="flex justify-between items-end mb-2 text-[8px]">
+                <div class="flex gap-1.5">
+                    <div class="flex items-center gap-0.5">
+                        <span class="font-bold">Hole:</span>
+                        <div class="flex"><div class="box-sm"></div><div class="box-sm-right"></div></div>
+                    </div>
+                    <div class="flex items-center gap-0.5">
+                        <span class="font-bold">Date:</span>
+                        <div class="flex">
+                            <div class="box-sm"></div><div class="box-sm-right"></div><div class="box-sm-right"></div><div class="box-sm-right"></div>
+                            <div class="box-sm-right"></div><div class="box-sm-right"></div><div class="box-sm-right"></div><div class="box-sm-right"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-0.5">
+                    <span class="font-bold">Course:</span>
+                    <div class="border-b border-black w-14 h-4"></div>
+                </div>
+            </div>
+
+            <!-- 1st Putt -->
+            <div class="mb-2.5 border border-black p-1.5 relative text-[8px]">
+                <div class="absolute -top-2 left-2 bg-white px-1 font-bold text-[10px]">1st Putt</div>
+
+                <div class="flex flex-col gap-1.5 mt-1.5">
+                    <!-- 行1: In / Dist(prev) / Result -->
+                    <div class="flex items-center justify-between w-full">
+                        <div class="flex items-center gap-1">
+                            <span class="font-bold">In:</span>
+                            <div class="box-check"></div>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span>Dist(prev):</span>
+                            <div class="flex">
+                                <div class="box"></div><div class="box-right"></div><div class="box-right"></div>
+                            </div>
+                            <span>yd</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="font-bold">Putt/Result:</span>
+                            <div class="box"></div>
+                        </div>
+                    </div>
+
+                    <!-- 行2: Length -->
+                    <div class="flex items-center gap-3">
+                        <span class="font-bold w-[42px]">Length:</span>
+                        <div class="flex items-center gap-1">
+                            <div class="flex"><div class="box"></div><div class="box-right"></div></div>
+                            <span>st</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <div class="flex"><div class="box"></div><div class="box-right"></div></div>
+                            <span>m</span>
+                        </div>
+                    </div>
+
+                    <!-- 行3: Miss / Touch / Mental -->
+                    <div class="flex items-center">
+                        <span class="shrink-0" style="width:54px">Miss:</span>
+                        <div class="box shrink-0"></div>
+                        <span class="shrink-0 ml-3" style="width:54px">Touch:</span>
+                        <div class="box shrink-0"></div>
+                        <span class="shrink-0 ml-3" style="width:54px">Mental:</span>
+                        <div class="box shrink-0"></div>
+                    </div>
+
+                    <!-- 行4: Line U/D / Line L/R -->
+                    <div class="flex items-center">
+                        <span class="shrink-0" style="width:54px">Line(U/D):</span>
+                        <div class="box shrink-0"></div>
+                        <span class="shrink-0 ml-3" style="width:54px">Line(L/R):</span>
+                        <div class="box shrink-0"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2nd Putt -->
+            <div class="mb-2.5 border border-black p-1.5 relative text-[8px]">
+                <div class="absolute -top-2 left-2 bg-white px-1 font-bold text-[10px]">2nd Putt</div>
+
+                <div class="flex flex-col gap-1.5 mt-1.5">
+                    <!-- 行1: In / Result -->
+                    <div class="flex items-center justify-between w-full">
+                        <div class="flex items-center gap-1">
+                            <span class="font-bold">In:</span>
+                            <div class="box-check"></div>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="font-bold">Putt/Result:</span>
+                            <div class="box"></div>
+                        </div>
+                    </div>
+
+                    <!-- 行2: Length -->
+                    <div class="flex items-center gap-3">
+                        <span class="font-bold w-[42px]">Length:</span>
+                        <div class="flex items-center gap-1">
+                            <div class="flex"><div class="box"></div><div class="box-right"></div></div>
+                            <span>st</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <div class="flex"><div class="box"></div><div class="box-right"></div></div>
+                            <span>m</span>
+                        </div>
+                    </div>
+
+                    <!-- 行3: Miss / Touch / Mental -->
+                    <div class="flex items-center">
+                        <span class="shrink-0" style="width:54px">Miss:</span>
+                        <div class="box shrink-0"></div>
+                        <span class="shrink-0 ml-3" style="width:54px">Touch:</span>
+                        <div class="box shrink-0"></div>
+                        <span class="shrink-0 ml-3" style="width:54px">Mental:</span>
+                        <div class="box shrink-0"></div>
+                    </div>
+
+                    <!-- 行4: Line U/D / Line L/R -->
+                    <div class="flex items-center">
+                        <span class="shrink-0" style="width:54px">Line(U/D):</span>
+                        <div class="box shrink-0"></div>
+                        <span class="shrink-0 ml-3" style="width:54px">Line(L/R):</span>
+                        <div class="box shrink-0"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3rd Putt -->
+            <div class="mb-2 border border-black p-1.5 relative text-[8px]">
+                <div class="absolute -top-2 left-2 bg-white px-1 font-bold text-[10px]">3rd Putt</div>
+
+                <div class="flex flex-col gap-1.5 mt-1.5">
+                    <!-- 行1: In / Result -->
+                    <div class="flex items-center justify-between w-full">
+                        <div class="flex items-center gap-1">
+                            <span class="font-bold">In:</span>
+                            <div class="box-check"></div>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="font-bold">Putt/Result:</span>
+                            <div class="box"></div>
+                        </div>
+                    </div>
+
+                    <!-- 行2: Length -->
+                    <div class="flex items-center gap-3">
+                        <span class="font-bold w-[42px]">Length:</span>
+                        <div class="flex items-center gap-1">
+                            <div class="flex"><div class="box"></div><div class="box-right"></div></div>
+                            <span>st</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <div class="flex"><div class="box"></div><div class="box-right"></div></div>
+                            <span>m</span>
+                        </div>
+                    </div>
+
+                    <!-- 行3: Miss / Touch / Mental -->
+                    <div class="flex items-center">
+                        <span class="shrink-0" style="width:54px">Miss:</span>
+                        <div class="box shrink-0"></div>
+                        <span class="shrink-0 ml-3" style="width:54px">Touch:</span>
+                        <div class="box shrink-0"></div>
+                        <span class="shrink-0 ml-3" style="width:54px">Mental:</span>
+                        <div class="box shrink-0"></div>
+                    </div>
+
+                    <!-- 行4: Line U/D / Line L/R -->
+                    <div class="flex items-center">
+                        <span class="shrink-0" style="width:54px">Line(U/D):</span>
+                        <div class="box shrink-0"></div>
+                        <span class="shrink-0 ml-3" style="width:54px">Line(L/R):</span>
+                        <div class="box shrink-0"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 凡例 -->
+            <div class="mt-2 border border-gray-400 p-1.5 text-[7px] leading-snug">
+                <p class="font-bold text-[8px] mb-0.5">■ 記入ガイド（各□に数字1つを記入 / In:カップイン時に✓）</p>
+                <div class="flex flex-col gap-px">
+                    <p><b>Putt/Result:</b> 1=E(agle) 2=B(irdie) 3=P(ar) 4=Bo(gey) 5=D+</p>
+                    <p><b>Miss:</b> 1=左奥 2=左手前 3=手前 4=右手前 5=右奥</p>
+                    <p><b>Touch:</b> 弱1―2―3(適正)―4―5強 / <b>Mental:</b> 1=とてもP―3=普通―5=とてもN</p>
+                    <p><b>U/D:</b> 1=Flat 2=Up 3=Down 4=U→D 5=D→U / <b>L/R:</b> 1=St 2=L 3=R 4=L→R 5=R→L</p>
+                </div>
+            </div>
+
+            <!-- フッター -->
+            <div class="mt-1 text-[7px] text-gray-600">
+                <p>※四隅の■が写るように撮影。数字は枠内に1桁ずつ記入。</p>
+            </div>
+            <div class="absolute bottom-1 left-0 w-full text-center text-gray-500 text-[8px]">
+                v2
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function downloadPDF() {
+            const element = document.getElementById('pdf-wrapper');
+            const btn = document.querySelector('button[onclick="downloadPDF()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = 'PDFを作成中...';
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            window.scrollTo(0, 0);
+
+            const opt = {
+                margin:       0,
+                filename:     'パッティングスコアカード_v2.pdf',
+                image:        { type: 'jpeg', quality: 1.0 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            html2pdf().set(opt).from(element).save().then(() => {
+                btn.innerHTML = originalText;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            });
+        }
+    </script>
+</body>
+</html>

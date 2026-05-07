@@ -135,6 +135,14 @@ export interface AnalyticsSummary {
   slopeStats: SlopeStats[];
   greenSpeedStats: GreenSpeedStats[];
   mentalStats: MentalStatsItem[];
+  // 新規7項目
+  touchStats: TouchStatsItem[];
+  slopeLeftRightStats: SlopeLeftRightStatsItem[];
+  missedDirectionStats: MissedDirectionStatsItem[];
+  putterStats: MetadataAvgPuttsItem[];
+  grassTypeStats: MetadataAvgPuttsItem[];
+  weatherStats: MetadataAvgPuttsItem[];
+  courseStats: MetadataAvgPuttsItem[];
 }
 
 export interface DistanceStats {
@@ -162,6 +170,36 @@ export interface MentalStatsItem {
   attempts: number;
   cupIns: number;
   rate: number;
+}
+
+// タッチ強度別統計
+export interface TouchStatsItem {
+  touch: PuttStrength;
+  attempts: number;
+  cupIns: number;
+  rate: number;
+}
+
+// 左右傾斜別統計
+export interface SlopeLeftRightStatsItem {
+  slope: SlopeLeftRight;
+  attempts: number;
+  cupIns: number;
+  rate: number;
+}
+
+// ミス方向別統計（cupIn=false の全パット対象）
+export interface MissedDirectionStatsItem {
+  direction: MissedDirection;
+  count: number;
+  rate: number; // 全ミスパット中の割合
+}
+
+// メタデータ別平均パット統計（汎用）
+export interface MetadataAvgPuttsItem {
+  label: string;
+  averagePutts: number;
+  rounds: number;
 }
 
 // ローカルストレージのキー

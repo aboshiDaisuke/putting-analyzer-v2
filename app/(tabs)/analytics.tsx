@@ -3,6 +3,7 @@ import { ScrollView, Text, View, TouchableOpacity, Dimensions } from "react-nati
 import { useFocusEffect } from "@react-navigation/native";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { getRounds } from "@/lib/storage";
 import {
@@ -10,7 +11,7 @@ import {
   filterRoundsByPeriod,
   formatPercentage,
 } from "@/lib/analytics";
-import { Round, AnalyticsSummary, LABELS } from "@/lib/types";
+import { Round, AnalyticsSummary, MetadataAvgPuttsItem, LABELS } from "@/lib/types";
 
 type Period = "week" | "month" | "year" | "all";
 
@@ -26,6 +27,15 @@ export default function AnalyticsScreen() {
   const [rounds, setRounds] = useState<Round[]>([]);
   const [period, setPeriod] = useState<Period>("all");
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    technique: true,
+    environment: false,
+    mental: false,
+  });
+
+  const toggleGroup = (group: string) => {
+    setExpandedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
+  };
 
   const loadData = useCallback(async () => {
     const allRounds = await getRounds();
@@ -65,7 +75,7 @@ export default function AnalyticsScreen() {
 
           <PeriodSelector period={period} onSelect={setPeriod} />
 
-          {/* サマリーカード */}
+          {/* サマリーカード（常時表示） */}
           <View className="bg-surface rounded-2xl p-4 border border-border">
             <Text className="text-lg font-semibold text-foreground mb-4">
               パフォーマンスサマリー
@@ -96,103 +106,202 @@ export default function AnalyticsScreen() {
             </View>
           </View>
 
-          {/* 距離別成功率 */}
-          <View className="bg-surface rounded-2xl p-4 border border-border">
-            <Text className="text-lg font-semibold text-foreground mb-4">
-              距離別カップイン率（1stパット）
-            </Text>
-            {summary.distanceStats
-              .filter((s) => s.attempts > 0)
-              .map((stat) => (
-                <BarRow
-                  key={stat.range}
-                  label={stat.range}
-                  value={stat.rate}
-                  count={stat.attempts}
-                  color={colors.primary}
-                />
-              ))}
-            {summary.distanceStats.every((s) => s.attempts === 0) && (
-              <Text className="text-muted text-center py-4">データなし</Text>
-            )}
-          </View>
+          {/* ── グループA: パット技術 ── */}
+          <SectionGroup
+            title="パット技術"
+            groupKey="technique"
+            expanded={expandedGroups.technique}
+            onToggle={toggleGroup}
+            sectionCount={5}
+            colors={colors}
+          >
+            {/* 距離別成功率 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border">
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                距離別カップイン率（1stパット）
+              </Text>
+              {summary.distanceStats
+                .filter((s) => s.attempts > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.range}
+                    label={stat.range}
+                    value={stat.rate}
+                    count={stat.attempts}
+                    color={colors.primary}
+                  />
+                ))}
+              {summary.distanceStats.every((s) => s.attempts === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
 
-          {/* 傾斜別成功率 */}
-          <View className="bg-surface rounded-2xl p-4 border border-border">
-            <Text className="text-lg font-semibold text-foreground mb-4">
-              傾斜別カップイン率（1stパット）
-            </Text>
-            {summary.slopeStats
-              .filter((s) => s.attempts > 0)
-              .map((stat) => (
-                <BarRow
-                  key={stat.slope}
-                  label={LABELS.slopeUpDown[stat.slope]}
-                  value={stat.rate}
-                  count={stat.attempts}
-                  color={colors.accent}
-                />
-              ))}
-            {summary.slopeStats.every((s) => s.attempts === 0) && (
-              <Text className="text-muted text-center py-4">データなし</Text>
-            )}
-          </View>
+            {/* 傾斜別成功率（上下） */}
+            <View className="bg-surface rounded-2xl p-4 border border-border">
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                傾斜別カップイン率 - 上下（1stパット）
+              </Text>
+              {summary.slopeStats
+                .filter((s) => s.attempts > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.slope}
+                    label={LABELS.slopeUpDown[stat.slope]}
+                    value={stat.rate}
+                    count={stat.attempts}
+                    color={colors.accent}
+                  />
+                ))}
+              {summary.slopeStats.every((s) => s.attempts === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
 
-          {/* グリーンスピード別 */}
-          <View className="bg-surface rounded-2xl p-4 border border-border">
-            <Text className="text-lg font-semibold text-foreground mb-4">
-              グリーンスピード別平均パット
-            </Text>
-            {summary.greenSpeedStats
-              .filter((s) => s.rounds > 0)
-              .map((stat) => (
-                <View
-                  key={stat.speedRange}
-                  className="flex-row items-center justify-between py-2 border-b border-border"
-                >
-                  <Text className="text-foreground">{stat.speedRange}</Text>
-                  <View className="flex-row items-baseline">
-                    <Text className="text-xl font-bold text-foreground">
-                      {stat.averagePutts.toFixed(2)}
-                    </Text>
-                    <Text className="text-muted text-sm ml-1">/H</Text>
-                    <Text className="text-muted text-xs ml-2">
-                      ({stat.rounds}R)
-                    </Text>
+            {/* 左右傾斜別成功率 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border">
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                傾斜別カップイン率 - 左右（1stパット）
+              </Text>
+              {summary.slopeLeftRightStats
+                .filter((s) => s.attempts > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.slope}
+                    label={LABELS.slopeLeftRight[stat.slope]}
+                    value={stat.rate}
+                    count={stat.attempts}
+                    color={colors.accent}
+                  />
+                ))}
+              {summary.slopeLeftRightStats.every((s) => s.attempts === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
+
+            {/* タッチ強度別カップイン率 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border">
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                タッチ強度別カップイン率（1stパット）
+              </Text>
+              {summary.touchStats
+                .filter((s) => s.attempts > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.touch}
+                    label={LABELS.puttStrength[stat.touch]}
+                    value={stat.rate}
+                    count={stat.attempts}
+                    color={colors.warning}
+                  />
+                ))}
+              {summary.touchStats.every((s) => s.attempts === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
+
+            {/* ミス方向別傾向 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border">
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                ミス方向別傾向（全パット・ミスのみ）
+              </Text>
+              {summary.missedDirectionStats
+                .filter((s) => s.count > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.direction}
+                    label={`方向 ${stat.direction}`}
+                    value={stat.rate}
+                    count={stat.count}
+                    color={colors.error}
+                  />
+                ))}
+              {summary.missedDirectionStats.every((s) => s.count === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
+          </SectionGroup>
+
+          {/* ── グループB: 環境要因 ── */}
+          <SectionGroup
+            title="環境要因"
+            groupKey="environment"
+            expanded={expandedGroups.environment}
+            onToggle={toggleGroup}
+            sectionCount={4}
+            colors={colors}
+          >
+            {/* グリーンスピード別 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border">
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                グリーンスピード別平均パット
+              </Text>
+              {summary.greenSpeedStats
+                .filter((s) => s.rounds > 0)
+                .map((stat) => (
+                  <View
+                    key={stat.speedRange}
+                    className="flex-row items-center justify-between py-2 border-b border-border"
+                  >
+                    <Text className="text-foreground">{stat.speedRange}</Text>
+                    <View className="flex-row items-baseline">
+                      <Text className="text-xl font-bold text-foreground">
+                        {stat.averagePutts.toFixed(2)}
+                      </Text>
+                      <Text className="text-muted text-sm ml-1">/H</Text>
+                      <Text className="text-muted text-xs ml-2">
+                        ({stat.rounds}R)
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ))}
-            {summary.greenSpeedStats.every((s) => s.rounds === 0) && (
-              <Text className="text-muted text-center py-4">データなし</Text>
-            )}
-          </View>
+                ))}
+              {summary.greenSpeedStats.every((s) => s.rounds === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
 
-          {/* 心理状態別 */}
-          <View className="bg-surface rounded-2xl p-4 border border-border">
-            <Text className="text-lg font-semibold text-foreground mb-4">
-              心理状態別カップイン率（1stパット）
-            </Text>
-            {summary.mentalStats
-              .filter((s) => s.attempts > 0)
-              .map((stat) => (
-                <BarRow
-                  key={stat.state}
-                  label={LABELS.mentalState[stat.state]}
-                  value={stat.rate}
-                  count={stat.attempts}
-                  color={
-                    (stat.state === 'P' || stat.state === 1 || stat.state === 2)
-                      ? colors.success
-                      : (stat.state === 'N' || stat.state === 4 || stat.state === 5)
-                      ? colors.error
-                      : colors.warning
-                  }
-                />
-              ))}
-            {summary.mentalStats.every((s) => s.attempts === 0) && (
-              <Text className="text-muted text-center py-4">データなし</Text>
-            )}
-          </View>
+            <MetadataSection title="芝の種類別平均パット" data={summary.grassTypeStats} />
+            <MetadataSection title="天候別平均パット" data={summary.weatherStats} />
+            <MetadataSection title="コース別平均パット" data={summary.courseStats} />
+          </SectionGroup>
+
+          {/* ── グループC: メンタル・装備 ── */}
+          <SectionGroup
+            title="メンタル・装備"
+            groupKey="mental"
+            expanded={expandedGroups.mental}
+            onToggle={toggleGroup}
+            sectionCount={2}
+            colors={colors}
+          >
+            {/* 心理状態別 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border">
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                心理状態別カップイン率（1stパット）
+              </Text>
+              {summary.mentalStats
+                .filter((s) => s.attempts > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.state}
+                    label={LABELS.mentalState[stat.state]}
+                    value={stat.rate}
+                    count={stat.attempts}
+                    color={
+                      (stat.state === 'P' || stat.state === 1 || stat.state === 2)
+                        ? colors.success
+                        : (stat.state === 'N' || stat.state === 4 || stat.state === 5)
+                        ? colors.error
+                        : colors.warning
+                    }
+                  />
+                ))}
+              {summary.mentalStats.every((s) => s.attempts === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
+
+            <MetadataSection title="パター別平均パット" data={summary.putterStats} />
+          </SectionGroup>
         </View>
       </ScrollView>
     </ScreenContainer>
@@ -256,6 +365,89 @@ function SummaryItem({
         <Text className="text-lg">{unit}</Text>
       </Text>
       <Text className="text-muted text-sm mt-1">{label}</Text>
+    </View>
+  );
+}
+
+function SectionGroup({
+  title,
+  groupKey,
+  expanded,
+  onToggle,
+  children,
+  sectionCount,
+  colors,
+}: {
+  title: string;
+  groupKey: string;
+  expanded: boolean;
+  onToggle: (key: string) => void;
+  children: React.ReactNode;
+  sectionCount: number;
+  colors: ReturnType<typeof useColors>;
+}) {
+  return (
+    <View>
+      <TouchableOpacity
+        className="flex-row items-center justify-between bg-surface rounded-xl px-4 py-3 border border-border"
+        onPress={() => onToggle(groupKey)}
+        activeOpacity={0.7}
+      >
+        <View className="flex-row items-center" style={{ gap: 8 }}>
+          <IconSymbol
+            name="chevron.right"
+            size={16}
+            color={colors.muted}
+            style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
+          />
+          <Text className="text-lg font-semibold text-foreground">{title}</Text>
+        </View>
+        <Text className="text-muted text-sm">{sectionCount}項目</Text>
+      </TouchableOpacity>
+      {expanded && (
+        <View style={{ gap: 16, marginTop: 16 }}>
+          {children}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function MetadataSection({
+  title,
+  data,
+}: {
+  title: string;
+  data: MetadataAvgPuttsItem[];
+}) {
+  return (
+    <View className="bg-surface rounded-2xl p-4 border border-border">
+      <Text className="text-lg font-semibold text-foreground mb-4">
+        {title}
+      </Text>
+      {data.length > 0 ? (
+        data.map((stat) => (
+          <View
+            key={stat.label}
+            className="flex-row items-center justify-between py-2 border-b border-border"
+          >
+            <Text className="text-foreground flex-1" numberOfLines={1}>
+              {stat.label}
+            </Text>
+            <View className="flex-row items-baseline">
+              <Text className="text-xl font-bold text-foreground">
+                {stat.averagePutts.toFixed(2)}
+              </Text>
+              <Text className="text-muted text-sm ml-1">/H</Text>
+              <Text className="text-muted text-xs ml-2">
+                ({stat.rounds}R)
+              </Text>
+            </View>
+          </View>
+        ))
+      ) : (
+        <Text className="text-muted text-center py-4">データなし</Text>
+      )}
     </View>
   );
 }
