@@ -391,6 +391,6 @@ export function createDefaultPutt(strokeNumber: 1 | 2 | 3): PuttData {
     touch: null,
     lineUD: 'flat',
     lineLR: 'straight',
-    mental: 3,
+    mental: null,
   };
 }
