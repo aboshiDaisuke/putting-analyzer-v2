@@ -119,6 +119,9 @@ export interface PuttData {
 // ホールデータ
 export interface HoleData {
   holeNumber: number; // 1-18
+  // NOTE: scoreResult は現状DBに保存されていない（api-golf.ts の dbHoleToClient で常に "par"）。
+  // 再読込するとユーザー入力値もOCR取得値も par に戻るため、ラウンド詳細のバッジ表示専用。
+  // 統計にも未使用。将来 scoreResult ベースの集計を追加する場合は DB スキーマにカラム追加が必要。
   scoreResult: ScoreResult;
   totalPutts: number;
   putts: PuttData[];
