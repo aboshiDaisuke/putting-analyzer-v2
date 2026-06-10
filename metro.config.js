@@ -11,6 +11,9 @@ config.resolver.unstable_enableSymlinks = true;
 // These are generated at build time and cause SHA-1 errors on Vercel
 config.resolver.blockList = [
   /node_modules\/react-native-css-interop\/\.cache\/.*/,
+  // 外付けボリューム(非APFS)でmacOSが生成するAppleDoubleファイル(._*)を除外
+  // app/ 配下に ._xxx.tsx ができると expo-router がルートとして解釈しパースエラーになる
+  /(^|\/)\._[^/]*$/,
 ];
 
 // Ensure node_modules are properly resolved
