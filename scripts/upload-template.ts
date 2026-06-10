@@ -11,7 +11,8 @@ if (!supabaseUrl || !supabaseKey) {
 }
 
 async function main() {
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  // 上のガードで存在確認済み（TSはモジュール変数の絞り込みを関数内へ伝播しない）
+  const supabase = createClient(supabaseUrl!, supabaseKey!);
   const buf = readFileSync("assets/scorecard-template.jpg");
 
   const { error } = await supabase.storage

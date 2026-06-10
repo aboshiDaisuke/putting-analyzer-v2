@@ -135,9 +135,26 @@ export default function OcrReviewScreen() {
     []
   );
 
-  const handleSaveToRound = async () => {
+  const handleSaveToRound = () => {
     if (ocrResults.length === 0) return;
 
+    // Hole番号が未設定のカードは convertOcrBatchToHoles で除外されるため、事前に確認する
+    const skippedCount = ocrResults.filter((r) => !r.hole).length;
+    if (skippedCount > 0) {
+      Alert.alert(
+        "確認",
+        `Hole番号が未設定のカードが${skippedCount}件あります。\nこのまま保存するとスキップされます。続行しますか？`,
+        [
+          { text: "キャンセル", style: "cancel" },
+          { text: "続行", onPress: () => void doSave() },
+        ]
+      );
+      return;
+    }
+    void doSave();
+  };
+
+  const doSave = async () => {
     setIsSaving(true);
     try {
       const holes = convertOcrBatchToHoles(ocrResults);

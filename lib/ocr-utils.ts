@@ -84,7 +84,7 @@ export function convertOcrHoleToAppHole(
   if (!ocrHole.hole) return null;
 
   const putts: PuttData[] = [];
-  let scoreResult: ScoreResult = "par";
+  let scoreResult: ScoreResult | null = null;
 
   for (const ocrPutt of ocrHole.putts) {
     const putt = convertOcrPuttToAppPutt(ocrPutt);
@@ -92,17 +92,14 @@ export function convertOcrHoleToAppHole(
       putts.push(putt);
     }
     // Resultが見つかったら採用（1st → 2nd → 3rd の順で最初に見つかったものを使用）
-    if (!scoreResult || scoreResult === "par") {
-      if (ocrPutt.result) {
-        const converted = convertResult(ocrPutt.result);
-        if (converted) scoreResult = converted;
-      }
+    if (scoreResult === null && ocrPutt.result) {
+      scoreResult = convertResult(ocrPutt.result);
     }
   }
 
   return {
     holeNumber: ocrHole.hole,
-    scoreResult,
+    scoreResult: scoreResult ?? "par",
     totalPutts: putts.length,
     putts,
   };

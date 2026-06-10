@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
-import { storagePut, storageDelete } from "./storage";
 import { golfRouter } from "./golfRouter";
 
 const OCR_USER_TEXT = "このスコアカード画像(v2)を読み取ってJSON形式で返してください。\n注意点:\n- 手書きで記入されていない枠は必ずnullにすること（印刷文字のみの枠は空欄扱い）\n- Length(m)欄の手書き数字を必ず確認すること\n- 選択肢の判定: ラベルは枠の上に印刷されている。ユーザーが印（✓・塗りつぶし・丸など）を付けた枠の位置（左から何番目か）で値を決めること";
@@ -137,27 +136,10 @@ export const appRouter = router({
   golf: golfRouter,
 
   ocr: router({
-    // スコアカード画像をアップロードしてS3に保存
-    uploadImage: publicProcedure
-      .input(
-        z.object({
-          base64: z.string(),
-          mimeType: z.string().default("image/jpeg"),
-        })
-      )
-      .mutation(async ({ input }) => {
-        const buffer = Buffer.from(input.base64, "base64");
-        const timestamp = Date.now();
-        const ext = input.mimeType === "image/png" ? "png" : "jpg";
-        const key = `scorecard/${timestamp}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-
-        const { url } = await storagePut(key, buffer, input.mimeType);
-        return { imageUrl: url, imageKey: key };
-      }),
-
     // LLMを使ってスコアカード画像を解析する
     // base64を直接受け取りGeminiへ送る（Supabase経由不要 → ラウンドトリップ削減で高速化）
-    analyzeScorecard: publicProcedure
+    // 認証必須: Gemini APIコストを伴うため未認証の呼び出しを禁止する
+    analyzeScorecard: protectedProcedure
       .input(
         z.object({
           base64: z.string(),
@@ -174,12 +156,14 @@ export const appRouter = router({
               role: "user",
               content: [
                 { type: "text", text: OCR_USER_TEXT },
-                { type: "image_url", image_url: { url: dataUri, detail: "high" } },
+                // NOTE: detail パラメータはOpenAI互換用で、Gemini変換時には無視される
+                { type: "image_url", image_url: { url: dataUri } },
               ],
             },
           ],
           response_format: { type: "json_object" },
-          thinkingBudget: 2048,
+          thinkingBudget: 2048, // Gemini 2.5系に切り替えた場合のみ使用
+          thinkingLevel: "high", // Gemini 3系: 視覚タスクのため high（思考トークンは出力単価に含まれ低コスト）
         });
 
         const rawContent = response.choices[0]?.message?.content;
@@ -195,64 +179,6 @@ export const appRouter = router({
         } catch {
           return { success: false as const, data: null, rawContent: content };
         }
-      }),
-
-    // 複数枚のスコアカードを一括解析（並列処理）
-    analyzeBatch: publicProcedure
-      .input(
-        z.object({
-          images: z.array(
-            z.object({
-              url: z.string(),
-              key: z.string().optional(), // 解析後に削除するためのストレージキー
-            })
-          ),
-        })
-      )
-      .mutation(async ({ input }) => {
-        const CONCURRENCY = 3; // Gemini API レート制限を考慮して同時3件
-
-        // 1枚のカードを解析する関数
-        async function analyzeOne(image: { url: string; key?: string }) {
-          try {
-            const response = await invokeLLM({
-              messages: [
-                { role: "system", content: OCR_SYSTEM_PROMPT },
-                {
-                  role: "user",
-                  content: [
-                    { type: "text", text: OCR_USER_TEXT },
-                    { type: "image_url", image_url: { url: image.url, detail: "high" } },
-                  ],
-                },
-              ],
-              response_format: { type: "json_object" },
-              thinkingBudget: 2048,
-            });
-
-            const rawContent = response.choices[0]?.message?.content;
-            if (rawContent) {
-              const contentStr = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
-              return { imageUrl: image.url, success: true as const, data: JSON.parse(contentStr) };
-            }
-            return { imageUrl: image.url, success: false as const, data: null };
-          } catch (error) {
-            return { imageUrl: image.url, success: false as const, data: null, error: String(error) };
-          } finally {
-            if (image.key) {
-              await storageDelete(image.key);
-            }
-          }
-        }
-
-        // 並列実行（同時CONCURRENCY件ずつ）
-        const results: Awaited<ReturnType<typeof analyzeOne>>[] = [];
-        for (let i = 0; i < input.images.length; i += CONCURRENCY) {
-          const chunk = input.images.slice(i, i + CONCURRENCY);
-          const chunkResults = await Promise.all(chunk.map(analyzeOne));
-          results.push(...chunkResults);
-        }
-        return { results };
       }),
   }),
 });

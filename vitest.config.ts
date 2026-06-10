@@ -16,6 +16,8 @@ export default defineConfig({
   },
   test: {
     include: ["lib/__tests__/**/*.test.ts", "tests/**/*.test.ts"],
+    // 外付けボリューム(非APFS)でmacOSが生成するAppleDoubleファイル(._*)を除外
+    exclude: ["**/node_modules/**", "**/._*"],
     environment: "node",
     // Load .env so Supabase client can initialise (URL / anon key)
     env: {

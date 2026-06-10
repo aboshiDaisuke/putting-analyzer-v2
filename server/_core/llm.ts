@@ -39,8 +39,17 @@ export type InvokeParams = {
   response_format?: { type: "text" | "json_object" | "json_schema" };
   maxTokens?: number;
   max_tokens?: number;
-  /** Gemini 2.5 思考トークン数。値が大きいほど精度が上がるが処理時間も増える。OCRには 5000 推奨。 */
+  /**
+   * Gemini 2.5 系の思考トークン数。値が大きいほど精度が上がるが、思考トークンは出力単価で課金され
+   * 処理時間も増える。OCRは 2048（コスト重視）〜5000（精度重視）の範囲で調整する。
+   * Gemini 3 系では無視され、thinkingLevel が使われる。
+   */
   thinkingBudget?: number;
+  /**
+   * Gemini 3 系の思考レベル（thinkingBudget の後継）。
+   * Gemini 2.5 系では無視される。OCRのような視覚タスクは "high" 推奨。
+   */
+  thinkingLevel?: "minimal" | "low" | "medium" | "high";
 };
 
 export type InvokeResult = {
@@ -138,14 +147,23 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     // responseMimeType でモデルに JSON 出力を強制（テキスト指示より確実）
     generationConfig.responseMimeType = "application/json";
   }
-  if (params.thinkingBudget && params.thinkingBudget > 0) {
-    // thinking: モデルが回答前に内部で推論するトークン数
-    // OCRのような複雑な視覚タスクで精度が大幅に向上する
+  // thinking: モデルが回答前に内部で推論する設定。OCRのような複雑な視覚タスクで精度が大幅に向上する。
+  // Gemini 3 系は thinkingLevel、2.5 系は thinkingBudget と指定方法が異なる（両方送ると400エラー）
+  const isGemini3 = ENV.geminiModel.startsWith("gemini-3");
+  if (isGemini3) {
+    const level =
+      params.thinkingLevel ??
+      // 後方互換: thinkingBudget しか指定されていない呼び出しは high に読み替える
+      (params.thinkingBudget && params.thinkingBudget > 0 ? "high" : undefined);
+    if (level) {
+      generationConfig.thinkingConfig = { thinkingLevel: level };
+    }
+  } else if (params.thinkingBudget && params.thinkingBudget > 0) {
     generationConfig.thinkingConfig = { thinkingBudget: params.thinkingBudget };
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: ENV.geminiModel,
     ...(systemInstruction ? { systemInstruction } : {}),
     ...(Object.keys(generationConfig).length > 0
       ? { generationConfig: generationConfig as any }
@@ -180,7 +198,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   return {
     id: `gemini-${Date.now()}`,
     created: Math.floor(Date.now() / 1000),
-    model: "gemini-2.5-flash",
+    model: ENV.geminiModel,
     choices: [
       {
         index: 0,

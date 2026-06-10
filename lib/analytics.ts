@@ -128,9 +128,12 @@ export function calculateCupInRate(rounds: Round[]): number {
 }
 
 // 距離別統計
+// distanceMeters=0 は「距離未記入」（OCR取込等）のため集計対象外にする
 export function calculateDistanceStats(rounds: Round[]): DistanceStats[] {
-  const firstPutts = extractFirstPutts(rounds);
-  
+  const firstPutts = extractFirstPutts(rounds).filter(
+    ({ putt }) => putt.distanceMeters > 0
+  );
+
   return DISTANCE_RANGES.map(range => {
     const puttsInRange = firstPutts.filter(
       ({ putt }) => putt.distanceMeters >= range.min && putt.distanceMeters < range.max
@@ -402,14 +405,17 @@ export function analyzeByDistance(rounds: Round[]): {
   medium: { successRate: number; count: number };
   long: { successRate: number; count: number };
 } {
-  const firstPutts = extractFirstPutts(rounds);
-  
+  // distanceMeters=0 は「距離未記入」（OCR取込等）のため集計対象外にする
+  const firstPutts = extractFirstPutts(rounds).filter(
+    ({ putt }) => putt.distanceMeters > 0
+  );
+
   const categories = {
     short: { attempts: 0, cupIns: 0 },
     medium: { attempts: 0, cupIns: 0 },
     long: { attempts: 0, cupIns: 0 },
   };
-  
+
   for (const { putt } of firstPutts) {
     const range = getDistanceRange(putt.distanceMeters);
     categories[range].attempts++;
