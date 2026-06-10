@@ -11,8 +11,10 @@ import {
 import { useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { hapticSuccess } from "@/lib/haptics";
 import { saveCourse } from "@/lib/storage";
 
 export default function CourseFormScreen() {
@@ -50,6 +52,7 @@ export default function CourseFormScreen() {
         location: location.trim() || undefined,
         greens,
       });
+      hapticSuccess();
       router.back();
     } catch (err) {
       setError("保存に失敗しました");
@@ -78,11 +81,7 @@ export default function CourseFormScreen() {
         <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
           <View className="gap-4">
             {/* エラー表示 */}
-            {error && (
-              <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginBottom: 16 }}>
-                <Text style={{ color: "#991b1b", fontSize: 13 }}>{error}</Text>
-              </View>
-            )}
+            {error && <ErrorBanner message={error} style={{ marginBottom: 16 }} />}
 
             <View>
               <Text className="text-muted text-sm mb-2">コース名 *</Text>

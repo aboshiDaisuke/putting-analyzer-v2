@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 import { useColors } from "@/hooks/use-colors";
+import { ErrorBanner } from "@/components/ui/error-banner";
 
 type Mode = "signin" | "signup";
 
@@ -200,18 +201,7 @@ export default function LoginScreen() {
             />
 
             {/* Error */}
-            {error && (
-              <View
-                style={{
-                  backgroundColor: "#fee2e2",
-                  borderRadius: 8,
-                  padding: 12,
-                  marginBottom: 16,
-                }}
-              >
-                <Text style={{ color: "#991b1b", fontSize: 13 }}>{error}</Text>
-              </View>
-            )}
+            {error && <ErrorBanner message={error} style={{ marginBottom: 16 }} />}
 
             {/* Success Message */}
             {message && (

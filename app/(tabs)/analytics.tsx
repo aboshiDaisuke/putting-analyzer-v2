@@ -1,11 +1,27 @@
 import { useCallback, useState } from "react";
-import { ScrollView, Text, View, TouchableOpacity, Dimensions } from "react-native";
+import {
+  ScrollView,
+  Text,
+  View,
+  TouchableOpacity,
+  Dimensions,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+} from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { cardShadow } from "@/lib/card-shadow";
+import { hapticLight } from "@/lib/haptics";
 import { getRounds } from "@/lib/storage";
+
+// Android（旧アーキテクチャ）でLayoutAnimationを有効化
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import {
   calculateAnalyticsSummary,
   filterRoundsByPeriod,
@@ -34,6 +50,8 @@ export default function AnalyticsScreen() {
   });
 
   const toggleGroup = (group: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    hapticLight();
     setExpandedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
   };
 
@@ -58,7 +76,10 @@ export default function AnalyticsScreen() {
         <Text className="text-2xl font-bold text-foreground mb-4">分析</Text>
         <PeriodSelector period={period} onSelect={setPeriod} />
         <View className="flex-1 items-center justify-center">
-          <Text className="text-muted text-lg">データがありません</Text>
+          <IconSymbol name="chart.bar.fill" size={64} color={colors.muted} />
+          <Text className="text-foreground font-semibold text-lg mt-4">
+            データがありません
+          </Text>
           <Text className="text-muted text-sm mt-2 text-center">
             ラウンドデータを記録すると{"\n"}分析結果が表示されます
           </Text>
@@ -76,7 +97,7 @@ export default function AnalyticsScreen() {
           <PeriodSelector period={period} onSelect={setPeriod} />
 
           {/* サマリーカード（常時表示） */}
-          <View className="bg-surface rounded-2xl p-4 border border-border">
+          <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
             <Text className="text-lg font-semibold text-foreground mb-4">
               パフォーマンスサマリー
             </Text>
@@ -116,7 +137,7 @@ export default function AnalyticsScreen() {
             colors={colors}
           >
             {/* 距離別成功率 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border">
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
               <Text className="text-lg font-semibold text-foreground mb-4">
                 距離別カップイン率（1stパット）
               </Text>
@@ -137,7 +158,7 @@ export default function AnalyticsScreen() {
             </View>
 
             {/* 傾斜別成功率（上下） */}
-            <View className="bg-surface rounded-2xl p-4 border border-border">
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
               <Text className="text-lg font-semibold text-foreground mb-4">
                 傾斜別カップイン率 - 上下（1stパット）
               </Text>
@@ -158,7 +179,7 @@ export default function AnalyticsScreen() {
             </View>
 
             {/* 左右傾斜別成功率 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border">
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
               <Text className="text-lg font-semibold text-foreground mb-4">
                 傾斜別カップイン率 - 左右（1stパット）
               </Text>
@@ -179,7 +200,7 @@ export default function AnalyticsScreen() {
             </View>
 
             {/* タッチ強度別カップイン率 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border">
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
               <Text className="text-lg font-semibold text-foreground mb-4">
                 タッチ強度別カップイン率（1stパット）
               </Text>
@@ -200,7 +221,7 @@ export default function AnalyticsScreen() {
             </View>
 
             {/* ミス方向別傾向 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border">
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
               <Text className="text-lg font-semibold text-foreground mb-4">
                 ミス方向別傾向（全パット・ミスのみ）
               </Text>
@@ -231,7 +252,7 @@ export default function AnalyticsScreen() {
             colors={colors}
           >
             {/* グリーンスピード別 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border">
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
               <Text className="text-lg font-semibold text-foreground mb-4">
                 グリーンスピード別平均パット
               </Text>
@@ -286,7 +307,7 @@ export default function AnalyticsScreen() {
             colors={colors}
           >
             {/* 心理状態別 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border">
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
               <Text className="text-lg font-semibold text-foreground mb-4">
                 心理状態別カップイン率（1stパット）
               </Text>
@@ -434,7 +455,7 @@ function MetadataSection({
 }) {
   const maxValue = Math.max(...data.map((d) => d.averagePutts), 0);
   return (
-    <View className="bg-surface rounded-2xl p-4 border border-border">
+    <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
       <Text className="text-lg font-semibold text-foreground mb-4">
         {title}
       </Text>

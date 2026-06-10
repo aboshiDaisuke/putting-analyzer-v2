@@ -11,8 +11,11 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { ConfirmBox } from "@/components/ui/confirm-box";
+import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { hapticSuccess } from "@/lib/haptics";
 import { getRound, updateRound, getUserProfile, saveHolesForRound } from "@/lib/storage";
 import { calculateDistance } from "@/lib/analytics";
 import {
@@ -288,6 +291,7 @@ export default function HoleInputScreen() {
       setRound(updatedRound);
 
       if (nextHole === "finish") {
+        hapticSuccess();
         router.replace(`/round/${round.id}` as any);
       } else {
         setCurrentHole(nextHole);
@@ -313,17 +317,17 @@ export default function HoleInputScreen() {
       <ScreenContainer className="items-center justify-center">
         {loadError ? (
           <View className="items-center gap-4 px-8">
-            <Text style={{ color: "#991b1b", textAlign: "center", fontSize: 14 }}>{loadError}</Text>
+            <Text style={{ color: colors.error, textAlign: "center", fontSize: 14 }}>{loadError}</Text>
             <View style={{ flexDirection: "row", gap: 12 }}>
               <TouchableOpacity
                 onPress={() => { setRound(null); setLoadError(null); setRetryCount(c => c + 1); }}
-                style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: "#2563eb", borderRadius: 8 }}
+                style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: colors.accent, borderRadius: 8 }}
               >
                 <Text style={{ color: "white", fontWeight: "600" }}>再試行</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => router.back()}
-                style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: "#166534", borderRadius: 8 }}
+                style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: colors.primary, borderRadius: 8 }}
               >
                 <Text style={{ color: "white", fontWeight: "600" }}>戻る</Text>
               </TouchableOpacity>
@@ -426,31 +430,17 @@ export default function HoleInputScreen() {
         <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
           {/* ラウンド終了確認UI */}
           {showFinishConfirm && (
-            <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginBottom: 16 }}>
-              <Text style={{ color: "#991b1b", fontSize: 13, marginBottom: 8 }}>データを保存してラウンドを終了しますか？</Text>
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <TouchableOpacity
-                  onPress={() => setShowFinishConfirm(false)}
-                  style={{ flex: 1, padding: 8, borderWidth: 1, borderColor: "#d1d5db", borderRadius: 6, alignItems: "center" }}
-                >
-                  <Text>キャンセル</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleConfirmFinish}
-                  style={{ flex: 1, padding: 8, backgroundColor: "#dc2626", borderRadius: 6, alignItems: "center" }}
-                >
-                  <Text style={{ color: "white" }}>終了</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            <ConfirmBox
+              message="データを保存してラウンドを終了しますか？"
+              confirmLabel="終了"
+              onCancel={() => setShowFinishConfirm(false)}
+              onConfirm={handleConfirmFinish}
+              style={{ marginBottom: 16 }}
+            />
           )}
 
           {/* 保存エラー表示 */}
-          {saveError && (
-            <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginBottom: 16 }}>
-              <Text style={{ color: "#991b1b", fontSize: 13 }}>{saveError}</Text>
-            </View>
-          )}
+          {saveError && <ErrorBanner message={saveError} style={{ marginBottom: 16 }} />}
 
           {/* バリデーション警告（非ブロッキング） */}
           {validationWarning && (

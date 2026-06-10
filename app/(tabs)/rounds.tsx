@@ -1,11 +1,14 @@
 import { useCallback, useState } from "react";
-import { FlatList, Text, View, TouchableOpacity } from "react-native";
+import { FlatList, RefreshControl, Text, View, TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { ConfirmBox } from "@/components/ui/confirm-box";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { cardShadow } from "@/lib/card-shadow";
+import { hapticSuccess } from "@/lib/haptics";
 import { getRounds, deleteRound } from "@/lib/storage";
 import { formatDate } from "@/lib/analytics";
 import { Round, LABELS } from "@/lib/types";
@@ -36,6 +39,7 @@ export default function RoundsScreen() {
 
   const handleConfirmDelete = useCallback(async (roundId: string) => {
     await deleteRound(roundId);
+    hapticSuccess();
     setShowDeleteConfirm(null);
     loadRounds();
   }, [loadRounds]);
@@ -43,6 +47,7 @@ export default function RoundsScreen() {
   const renderItem = ({ item }: { item: Round }) => (
     <TouchableOpacity
       className="bg-surface rounded-xl p-4 mb-3 border border-border"
+      style={cardShadow}
       onPress={() => router.push(`/round/${item.id}` as any)}
       activeOpacity={0.8}
     >
@@ -82,23 +87,13 @@ export default function RoundsScreen() {
         </View>
       </View>
       {showDeleteConfirm === item.id && (
-        <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginTop: 8 }}>
-          <Text style={{ color: "#991b1b", fontSize: 13, marginBottom: 8 }}>削除しますか？</Text>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <TouchableOpacity
-              onPress={() => setShowDeleteConfirm(null)}
-              style={{ flex: 1, padding: 8, borderWidth: 1, borderColor: "#d1d5db", borderRadius: 6, alignItems: "center" }}
-            >
-              <Text>キャンセル</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => handleConfirmDelete(item.id)}
-              style={{ flex: 1, padding: 8, backgroundColor: "#dc2626", borderRadius: 6, alignItems: "center" }}
-            >
-              <Text style={{ color: "white" }}>削除</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <ConfirmBox
+          message="削除しますか？"
+          confirmLabel="削除"
+          onCancel={() => setShowDeleteConfirm(null)}
+          onConfirm={() => handleConfirmDelete(item.id)}
+          style={{ marginTop: 8 }}
+        />
       )}
     </TouchableOpacity>
   );
@@ -122,8 +117,14 @@ export default function RoundsScreen() {
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
-          refreshing={refreshing}
-          onRefresh={onRefresh}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
         />
       ) : (
         <View className="flex-1 items-center justify-center">

@@ -12,8 +12,11 @@ import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { ConfirmBox } from "@/components/ui/confirm-box";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { cardShadow } from "@/lib/card-shadow";
+import { hapticSuccess } from "@/lib/haptics";
 import {
   getUserProfile,
   saveUserProfile,
@@ -72,10 +75,12 @@ export default function ProfileScreen() {
     });
     setProfile(updated);
     setIsEditing(false);
+    hapticSuccess();
   };
 
   const handleConfirmDeletePutter = async (putterId: string) => {
     await deletePutter(putterId);
+    hapticSuccess();
     setShowDeletePutterConfirm(null);
     loadData();
   };
@@ -87,6 +92,7 @@ export default function ProfileScreen() {
 
   const handleConfirmDeleteCourse = async (courseId: string) => {
     await deleteCourse(courseId);
+    hapticSuccess();
     setShowDeleteCourseConfirm(null);
     loadData();
   };
@@ -95,6 +101,7 @@ export default function ProfileScreen() {
     setIsDeletingAllRounds(true);
     try {
       await deleteAllRounds();
+      hapticSuccess();
       setShowDeleteAllRoundsConfirm(false);
     } finally {
       setIsDeletingAllRounds(false);
@@ -112,7 +119,7 @@ export default function ProfileScreen() {
             <Text className="text-2xl font-bold text-foreground">プロフィール</Text>
 
             {/* ユーザー情報 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border">
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
               <View className="flex-row items-center justify-between mb-4">
                 <Text className="text-lg font-semibold text-foreground">
                   基本情報
@@ -189,7 +196,7 @@ export default function ProfileScreen() {
             </View>
 
             {/* マイパター */}
-            <View className="bg-surface rounded-2xl p-4 border border-border">
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
               <View className="flex-row items-center justify-between mb-4">
                 <Text className="text-lg font-semibold text-foreground">
                   マイパター
@@ -256,23 +263,13 @@ export default function ProfileScreen() {
                         </View>
                       </View>
                       {showDeletePutterConfirm === putter.id && (
-                        <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginTop: 8 }}>
-                          <Text style={{ color: "#991b1b", fontSize: 13, marginBottom: 8 }}>削除しますか？</Text>
-                          <View style={{ flexDirection: "row", gap: 8 }}>
-                            <TouchableOpacity
-                              onPress={() => setShowDeletePutterConfirm(null)}
-                              style={{ flex: 1, padding: 8, borderWidth: 1, borderColor: "#d1d5db", borderRadius: 6, alignItems: "center" }}
-                            >
-                              <Text>キャンセル</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={() => handleConfirmDeletePutter(putter.id)}
-                              style={{ flex: 1, padding: 8, backgroundColor: "#dc2626", borderRadius: 6, alignItems: "center" }}
-                            >
-                              <Text style={{ color: "white" }}>削除</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
+                        <ConfirmBox
+                          message="削除しますか？"
+                          confirmLabel="削除"
+                          onCancel={() => setShowDeletePutterConfirm(null)}
+                          onConfirm={() => handleConfirmDeletePutter(putter.id)}
+                          style={{ marginTop: 8 }}
+                        />
                       )}
                     </View>
                   ))}
@@ -294,7 +291,7 @@ export default function ProfileScreen() {
             </View>
 
             {/* 登録コース */}
-            <View className="bg-surface rounded-2xl p-4 border border-border">
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
               <View className="flex-row items-center justify-between mb-4">
                 <Text className="text-lg font-semibold text-foreground">
                   登録コース
@@ -337,23 +334,13 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                       </View>
                       {showDeleteCourseConfirm === course.id && (
-                        <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginTop: 8 }}>
-                          <Text style={{ color: "#991b1b", fontSize: 13, marginBottom: 8 }}>削除しますか？</Text>
-                          <View style={{ flexDirection: "row", gap: 8 }}>
-                            <TouchableOpacity
-                              onPress={() => setShowDeleteCourseConfirm(null)}
-                              style={{ flex: 1, padding: 8, borderWidth: 1, borderColor: "#d1d5db", borderRadius: 6, alignItems: "center" }}
-                            >
-                              <Text>キャンセル</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={() => handleConfirmDeleteCourse(course.id)}
-                              style={{ flex: 1, padding: 8, backgroundColor: "#dc2626", borderRadius: 6, alignItems: "center" }}
-                            >
-                              <Text style={{ color: "white" }}>削除</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
+                        <ConfirmBox
+                          message="削除しますか？"
+                          confirmLabel="削除"
+                          onCancel={() => setShowDeleteCourseConfirm(null)}
+                          onConfirm={() => handleConfirmDeleteCourse(course.id)}
+                          style={{ marginTop: 8 }}
+                        />
                       )}
                     </View>
                   ))}
@@ -367,7 +354,7 @@ export default function ProfileScreen() {
 
             {/* 全ラウンドデータを削除 */}
             {showDeleteAllRoundsConfirm ? (
-              <View className="bg-surface rounded-2xl p-4 border border-border gap-3" style={{ borderColor: "#dc2626" }}>
+              <View className="bg-surface rounded-2xl p-4 border border-border gap-3" style={[{ borderColor: colors.error }, cardShadow]}>
                 <Text className="text-foreground font-semibold text-center">
                   全ラウンドデータを削除しますか？
                 </Text>
@@ -400,6 +387,7 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 onPress={() => setShowDeleteAllRoundsConfirm(true)}
                 className="bg-surface rounded-2xl p-4 border border-border flex-row items-center justify-center gap-2"
+                style={cardShadow}
                 activeOpacity={0.7}
               >
                 <IconSymbol name="trash.fill" size={20} color={colors.error} />
@@ -411,7 +399,7 @@ export default function ProfileScreen() {
 
             {/* ログアウト */}
             {showLogoutConfirm ? (
-              <View className="bg-surface rounded-2xl p-4 border border-border gap-3">
+              <View className="bg-surface rounded-2xl p-4 border border-border gap-3" style={cardShadow}>
                 <Text className="text-foreground font-semibold text-center">ログアウトしますか？</Text>
                 <View className="flex-row gap-3">
                   <TouchableOpacity
@@ -435,6 +423,7 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 onPress={() => setShowLogoutConfirm(true)}
                 className="bg-surface rounded-2xl p-4 border border-border flex-row items-center justify-center gap-2"
+                style={cardShadow}
                 activeOpacity={0.7}
               >
                 <IconSymbol name="rectangle.portrait.and.arrow.right" size={20} color={colors.error} />

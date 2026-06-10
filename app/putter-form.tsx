@@ -11,8 +11,10 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { hapticSuccess } from "@/lib/haptics";
 import { getPutter, savePutter, updatePutter } from "@/lib/storage";
 import { LABELS } from "@/lib/types";
 
@@ -89,6 +91,7 @@ export default function PutterFormScreen() {
       } else {
         await savePutter(putterData);
       }
+      hapticSuccess();
       router.back();
     } catch (err) {
       console.error("Save error:", err);
@@ -133,11 +136,7 @@ export default function PutterFormScreen() {
         >
           <View className="gap-5">
             {/* エラー表示 */}
-            {error && (
-              <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginBottom: 16 }}>
-                <Text style={{ color: "#991b1b", fontSize: 13 }}>{error}</Text>
-              </View>
-            )}
+            {error && <ErrorBanner message={error} style={{ marginBottom: 16 }} />}
 
             {/* 必須項目セクション */}
             <View className="bg-surface rounded-2xl p-4 border border-border">

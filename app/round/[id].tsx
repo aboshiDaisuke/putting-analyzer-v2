@@ -3,8 +3,11 @@ import { ScrollView, Text, View, TouchableOpacity } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { ConfirmBox } from "@/components/ui/confirm-box";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { cardShadow } from "@/lib/card-shadow";
+import { hapticSuccess } from "@/lib/haptics";
 import { getRound, deleteRound, resetRoundHoles } from "@/lib/storage";
 import { formatDate } from "@/lib/analytics";
 import { Round, LABELS } from "@/lib/types";
@@ -43,6 +46,7 @@ export default function RoundDetailScreen() {
   const handleConfirmDelete = async () => {
     if (!round) return;
     await deleteRound(round.id);
+    hapticSuccess();
     setShowDeleteConfirm(false);
     router.back();
   };
@@ -61,10 +65,10 @@ export default function RoundDetailScreen() {
       <ScreenContainer className="items-center justify-center">
         {loadError ? (
           <View className="items-center gap-4 px-8">
-            <Text style={{ color: "#991b1b", textAlign: "center", fontSize: 14 }}>{loadError}</Text>
+            <Text style={{ color: colors.error, textAlign: "center", fontSize: 14 }}>{loadError}</Text>
             <TouchableOpacity
               onPress={() => router.back()}
-              style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: "#166534", borderRadius: 8 }}
+              style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: colors.primary, borderRadius: 8 }}
             >
               <Text style={{ color: "white", fontWeight: "600" }}>戻る</Text>
             </TouchableOpacity>
@@ -97,56 +101,31 @@ export default function RoundDetailScreen() {
 
       {/* 削除確認 */}
       {showDeleteConfirm && (
-        <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, margin: 16 }}>
-          <Text style={{ color: "#991b1b", fontWeight: "600", marginBottom: 8 }}>
-            このラウンドデータを削除しますか？
-          </Text>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <TouchableOpacity
-              onPress={() => setShowDeleteConfirm(false)}
-              style={{ flex: 1, padding: 10, backgroundColor: "#6b7280", borderRadius: 6, alignItems: "center" }}
-            >
-              <Text style={{ color: "white", fontWeight: "600" }}>キャンセル</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleConfirmDelete}
-              style={{ flex: 1, padding: 10, backgroundColor: "#dc2626", borderRadius: 6, alignItems: "center" }}
-            >
-              <Text style={{ color: "white", fontWeight: "600" }}>削除</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <ConfirmBox
+          message="このラウンドデータを削除しますか？"
+          confirmLabel="削除"
+          onCancel={() => setShowDeleteConfirm(false)}
+          onConfirm={handleConfirmDelete}
+          style={{ margin: 16 }}
+        />
       )}
 
       {/* リセット確認 */}
       {showResetConfirm && (
-        <View style={{ backgroundColor: "#fef3c7", borderRadius: 8, padding: 12, margin: 16, marginTop: 0 }}>
-          <Text style={{ color: "#92400e", fontWeight: "600", marginBottom: 4 }}>
-            ホールデータをリセットしますか？
-          </Text>
-          <Text style={{ color: "#78350f", fontSize: 12, marginBottom: 8 }}>
-            パット記録が全て消えます。ラウンド情報（コース・日付等）は残ります。
-          </Text>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <TouchableOpacity
-              onPress={() => setShowResetConfirm(false)}
-              style={{ flex: 1, padding: 10, backgroundColor: "#6b7280", borderRadius: 6, alignItems: "center" }}
-            >
-              <Text style={{ color: "white", fontWeight: "600" }}>キャンセル</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleConfirmReset}
-              style={{ flex: 1, padding: 10, backgroundColor: "#d97706", borderRadius: 6, alignItems: "center" }}
-            >
-              <Text style={{ color: "white", fontWeight: "600" }}>リセット</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <ConfirmBox
+          variant="warning"
+          message="ホールデータをリセットしますか？"
+          detail="パット記録が全て消えます。ラウンド情報（コース・日付等）は残ります。"
+          confirmLabel="リセット"
+          onCancel={() => setShowResetConfirm(false)}
+          onConfirm={handleConfirmReset}
+          style={{ margin: 16, marginTop: 0 }}
+        />
       )}
 
       <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
         {/* 基本情報 */}
-        <View className="bg-surface rounded-2xl p-4 border border-border mb-4">
+        <View className="bg-surface rounded-2xl p-4 border border-border mb-4" style={cardShadow}>
           <Text className="text-xl font-bold text-foreground mb-1">
             {round.courseName}
           </Text>
@@ -169,7 +148,7 @@ export default function RoundDetailScreen() {
         </View>
 
         {/* サマリー */}
-        <View className="bg-surface rounded-2xl p-4 border border-border mb-4">
+        <View className="bg-surface rounded-2xl p-4 border border-border mb-4" style={cardShadow}>
           <Text className="text-lg font-semibold text-foreground mb-4">
             パフォーマンス
           </Text>
@@ -190,14 +169,14 @@ export default function RoundDetailScreen() {
         </View>
 
         {/* ホール別データ */}
-        <View className="bg-surface rounded-2xl p-4 border border-border">
+        <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
           <View className="flex-row items-center justify-between mb-4">
             <Text className="text-lg font-semibold text-foreground">
               ホール別データ
             </Text>
             <View style={{ flexDirection: "row", gap: 12 }}>
               <TouchableOpacity onPress={() => setShowResetConfirm(true)}>
-                <Text style={{ color: "#d97706" }}>リセット</Text>
+                <Text style={{ color: colors.warning }}>リセット</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => router.push(`/hole-input/${round.id}` as any)}

@@ -17,6 +17,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as ImageManipulator from "expo-image-manipulator";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
@@ -168,7 +169,7 @@ export default function ScanCardScreen() {
       try {
         setAnalysisProgress((i / capturedImages.length) * 100);
 
-        // 1. 画像を圧縮（Vercel 4.5MB 上限対策: 1920px幅・quality 0.92）
+        // 1. 画像を圧縮（Vercel 4.5MB 上限対策: 2560px幅・quality 0.92）
         const compressedBase64 = await compressForUpload(capturedImages[i].uri, capturedImages[i].base64);
 
         // 2. base64を直接Geminiへ送信（Supabase経由不要 → ラウンドトリップ削減で高速化）
@@ -287,10 +288,7 @@ export default function ScanCardScreen() {
           <View className="gap-4">
             {/* エラー表示 */}
             {analysisError && (
-              <View style={{ backgroundColor: "rgba(220,38,38,0.1)", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "rgba(220,38,38,0.4)" }}>
-                <Text style={{ color: "#dc2626", fontWeight: "600", fontSize: 13, marginBottom: 4 }}>読み取りエラー</Text>
-                <Text style={{ color: colors.foreground, fontSize: 13, lineHeight: 20 }}>{analysisError}</Text>
-              </View>
+              <ErrorBanner title="読み取りエラー" message={analysisError} />
             )}
 
             {/* 撮影枚数表示 */}

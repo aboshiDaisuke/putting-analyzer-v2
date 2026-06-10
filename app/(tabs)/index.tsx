@@ -6,6 +6,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { cardShadow } from "@/lib/card-shadow";
 import { getRounds, getUserProfile } from "@/lib/storage";
 import { calculateBasicStats, calculateOnePuttRate, calculateThreePuttRate, formatDate } from "@/lib/analytics";
 import { Round, UserProfile } from "@/lib/types";
@@ -48,12 +49,17 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={{ paddingBottom: 16 }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
         }
       >
         <View className="p-4 gap-5">
           {/* ヘッダー */}
-          <View className="bg-primary rounded-2xl p-5">
+          <View className="bg-primary rounded-2xl p-5" style={cardShadow}>
             <Text className="text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>
               {new Date().toLocaleDateString("ja-JP", {
                 year: "numeric",
@@ -75,14 +81,14 @@ export default function HomeScreen() {
 
           {/* メインスタッツ */}
           <View className="flex-row gap-3">
-            <View className="flex-1 bg-surface rounded-2xl p-4 border border-border items-center">
+            <View className="flex-1 bg-surface rounded-2xl p-4 border border-border items-center" style={cardShadow}>
               <Text className="text-xs text-muted mb-1">平均パット</Text>
               <Text className="text-3xl font-bold text-primary">
                 {stats.averagePuttsPerHole.toFixed(1)}
               </Text>
               <Text className="text-xs text-muted">/ホール</Text>
             </View>
-            <View className="flex-1 bg-surface rounded-2xl p-4 border border-border items-center">
+            <View className="flex-1 bg-surface rounded-2xl p-4 border border-border items-center" style={cardShadow}>
               <Text className="text-xs text-muted mb-1">1パット率</Text>
               <Text className={`text-3xl font-bold ${onePuttRate > 30 ? "text-success" : "text-foreground"}`}>
                 {onePuttRate.toFixed(0)}
@@ -90,7 +96,7 @@ export default function HomeScreen() {
               </Text>
               <ProgressBar value={onePuttRate} max={50} color="success" />
             </View>
-            <View className="flex-1 bg-surface rounded-2xl p-4 border border-border items-center">
+            <View className="flex-1 bg-surface rounded-2xl p-4 border border-border items-center" style={cardShadow}>
               <Text className="text-xs text-muted mb-1">3パット率</Text>
               <Text className={`text-3xl font-bold ${threePuttRate > 10 ? "text-error" : "text-foreground"}`}>
                 {threePuttRate.toFixed(0)}
@@ -180,6 +186,7 @@ function RoundCard({ round, onPress }: { round: Round; onPress: () => void }) {
   return (
     <TouchableOpacity
       className="bg-surface rounded-2xl p-4 border border-border"
+      style={cardShadow}
       onPress={onPress}
       activeOpacity={0.8}
     >

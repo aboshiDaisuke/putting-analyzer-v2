@@ -11,8 +11,10 @@ import {
 import { useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { hapticSuccess } from "@/lib/haptics";
 import { getPutters, getCourses, saveRound } from "@/lib/storage";
 import {
   Putter,
@@ -126,6 +128,7 @@ export default function NewRoundScreen() {
     setIsSubmitting(true);
     try {
       const newRound = await saveRound(roundData);
+      hapticSuccess();
       router.replace(`/hole-input/${newRound.id}` as any);
     } catch (err) {
       setError("ラウンドの作成に失敗しました。もう一度お試しください。");
@@ -493,15 +496,20 @@ export default function NewRoundScreen() {
         </View>
 
         {/* ステップインジケーター */}
-        <View className="flex-row justify-center gap-2 py-4">
-          {[1, 2, 3, 4].map((s) => (
-            <View
-              key={s}
-              className={`w-2 h-2 rounded-full ${
-                s === step ? "bg-primary" : s < step ? "bg-primary/50" : "bg-border"
-              }`}
-            />
-          ))}
+        <View className="px-4 pt-4 pb-2">
+          <View className="flex-row gap-1.5">
+            {[1, 2, 3, 4].map((s) => (
+              <View
+                key={s}
+                className={`flex-1 h-1.5 rounded-full ${
+                  s <= step ? "bg-primary" : "bg-border"
+                }`}
+              />
+            ))}
+          </View>
+          <Text className="text-muted text-xs text-center mt-2">
+            ステップ {step} / 4
+          </Text>
         </View>
 
         <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
@@ -513,9 +521,7 @@ export default function NewRoundScreen() {
 
         {/* エラー表示 */}
         {error && (
-          <View style={{ backgroundColor: "#fee2e2", borderRadius: 8, padding: 12, marginHorizontal: 16, marginBottom: 8 }}>
-            <Text style={{ color: "#991b1b", fontSize: 13 }}>{error}</Text>
-          </View>
+          <ErrorBanner message={error} style={{ marginHorizontal: 16, marginBottom: 8 }} />
         )}
 
         {/* ナビゲーションボタン */}
