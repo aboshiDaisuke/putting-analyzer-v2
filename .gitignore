@@ -70,3 +70,7 @@ ARCHITECTURE.pdf
 .env.*
 !.env.example
 .vercel
+
+# ローカル専用（Claude Code設定・開発用QRコード）
+.claude/
+expo-qr-code.png
