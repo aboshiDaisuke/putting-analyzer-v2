@@ -3,15 +3,17 @@ import {
   Text,
   View,
   TouchableOpacity,
-  Alert,
   TextInput,
   FlatList,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { ConfirmBox } from "@/components/ui/confirm-box";
+import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { hapticSuccess } from "@/lib/haptics";
 import type { OcrHoleData, OcrPuttData } from "@/lib/ocr-utils";
 import { convertOcrBatchToHoles } from "@/lib/ocr-utils";
 import { saveRound, saveHolesForRound, updateRound } from "@/lib/storage";
@@ -90,6 +92,9 @@ export default function OcrReviewScreen() {
   const [ocrResults, setOcrResults] = useState<OcrHoleData[]>([]);
   const [expandedHole, setExpandedHole] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  // Alert.alert は react-native-web では no-op のため、確認・エラーはインライン表示にする
+  const [confirmSkip, setConfirmSkip] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (data) {
@@ -141,14 +146,7 @@ export default function OcrReviewScreen() {
     // Hole番号が未設定のカードは convertOcrBatchToHoles で除外されるため、事前に確認する
     const skippedCount = ocrResults.filter((r) => !r.hole).length;
     if (skippedCount > 0) {
-      Alert.alert(
-        "確認",
-        `Hole番号が未設定のカードが${skippedCount}件あります。\nこのまま保存するとスキップされます。続行しますか？`,
-        [
-          { text: "キャンセル", style: "cancel" },
-          { text: "続行", onPress: () => void doSave() },
-        ]
-      );
+      setConfirmSkip(true);
       return;
     }
     void doSave();
@@ -156,11 +154,12 @@ export default function OcrReviewScreen() {
 
   const doSave = async () => {
     setIsSaving(true);
+    setErrorMsg(null);
     try {
       const holes = convertOcrBatchToHoles(ocrResults);
 
       if (holes.length === 0) {
-        Alert.alert("エラー", "有効なホールデータがありません");
+        setErrorMsg("有効なホールデータがありません");
         setIsSaving(false);
         return;
       }
@@ -171,17 +170,8 @@ export default function OcrReviewScreen() {
         // ─── 既存ラウンドにホールデータを保存 ───────────────────────────
         await saveHolesForRound(roundId, holes);
         await updateRound(roundId, { totalPutts });
-
-        Alert.alert(
-          "取り込み完了",
-          `${holes.length}ホール分のデータをラウンドに取り込みました。`,
-          [
-            {
-              text: "ラウンド詳細へ",
-              onPress: () => router.replace(`/round/${roundId}` as any),
-            },
-          ]
-        );
+        hapticSuccess();
+        router.replace(`/round/${roundId}` as any);
       } else {
         // ─── 後方互換：新規ラウンドとして保存 ──────────────────────────
         const firstResult = ocrResults[0];
@@ -233,21 +223,12 @@ export default function OcrReviewScreen() {
         };
 
         await saveRound(newRound);
-
-        Alert.alert(
-          "保存完了",
-          `${holes.length}ホール分のデータを保存しました。\n\nラウンド詳細画面で環境情報を追加設定できます。`,
-          [
-            {
-              text: "ラウンド一覧へ",
-              onPress: () => router.replace("/(tabs)/rounds" as any),
-            },
-          ]
-        );
+        hapticSuccess();
+        router.replace("/(tabs)/rounds" as any);
       }
     } catch (error) {
       console.error("Save error:", error);
-      Alert.alert("エラー", "保存に失敗しました");
+      setErrorMsg("保存に失敗しました。もう一度お試しください。");
     } finally {
       setIsSaving(false);
     }
@@ -531,6 +512,27 @@ export default function OcrReviewScreen() {
           AIが読み取った結果です。各ホールをタップして内容を確認・修正できます。
         </Text>
       </View>
+
+      {/* Hole未設定カードのスキップ確認 */}
+      {confirmSkip && (
+        <ConfirmBox
+          message={`Hole番号が未設定のカードが${ocrResults.filter((r) => !r.hole).length}件あります`}
+          detail="このまま保存するとスキップされます。続行しますか？"
+          confirmLabel="続行"
+          variant="warning"
+          onConfirm={() => {
+            setConfirmSkip(false);
+            void doSave();
+          }}
+          onCancel={() => setConfirmSkip(false)}
+          style={{ marginHorizontal: 16, marginTop: 8 }}
+        />
+      )}
+
+      {/* 保存エラー */}
+      {errorMsg && (
+        <ErrorBanner message={errorMsg} style={{ marginHorizontal: 16, marginTop: 8 }} />
+      )}
 
       {/* ホールリスト */}
       <FlatList

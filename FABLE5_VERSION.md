@@ -33,5 +33,6 @@ npm install   # または pnpm install
 npm run dev   # APIサーバー(3000) + Metro(8081)
 ```
 
+ブラウザ確認: http://localhost:8081 を開く。`.env` の `EXPO_PUBLIC_API_BASE_URL=http://localhost:3000` が必要（設定済み。空白だとAPI呼び出しがMetroに飛んで404になる）。
 スマホ確認: Macと同じWi-Fiで Expo Go からQR読み取り。
-スマホ実機の場合は `EXPO_PUBLIC_API_BASE_URL=http://<MacのLAN IP>:3000` を指定してMetroを起動すること。
+スマホ実機の場合は `EXPO_PUBLIC_API_BASE_URL=http://<MacのLAN IP>:3000` に変更してMetroを再起動すること。
