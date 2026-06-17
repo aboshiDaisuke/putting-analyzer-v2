@@ -25,17 +25,28 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
+        tabBarInactiveTintColor: colors.muted,
         headerShown: false,
         tabBarButton: Platform.OS === "web" ? undefined : HapticTab,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "600",
+          letterSpacing: 0.2,
+        },
         tabBarStyle: {
           paddingTop: 8,
           paddingBottom: bottomPadding,
           height: tabBarHeight,
-          backgroundColor: colors.background,
+          backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 0.5,
           zIndex: 100,
           elevation: 10,
+          // 上方向への控えめな影でコンテンツから浮かせる
+          shadowColor: "#0B2E1A",
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
         },
       }}
     >
