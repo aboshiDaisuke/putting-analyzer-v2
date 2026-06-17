@@ -186,8 +186,9 @@ export async function deleteAllRounds(): Promise<boolean> {
 export async function saveHolesForRound(
   roundId: string,
   holes: HoleData[],
+  roundTotalPutts?: number,
 ): Promise<{ roundId: string; holes: HoleData[] }> {
-  return ApiGolf.saveHolesForRound(roundId, holes);
+  return ApiGolf.saveHolesForRound(roundId, holes, roundTotalPutts);
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────

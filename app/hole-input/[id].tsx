@@ -16,7 +16,7 @@ import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { hapticSuccess } from "@/lib/haptics";
-import { getRound, updateRound, getUserProfile, saveHolesForRound } from "@/lib/storage";
+import { getRound, getUserProfile, saveHolesForRound } from "@/lib/storage";
 import { calculateDistance } from "@/lib/analytics";
 import {
   Round,
@@ -276,11 +276,8 @@ export default function HoleInputScreen() {
     const totalRoundPutts = updatedHoles.reduce((sum, h) => sum + h.totalPutts, 0);
 
     try {
-      // Persist hole data to the server (separate holes table)
-      await saveHolesForRound(round.id, updatedHoles);
-
-      // Update the round's totalPutts metadata
-      await updateRound(round.id, { totalPutts: totalRoundPutts });
+      // ホール保存とラウンド合計(totalPutts)の更新を1リクエストにまとめ、部分保存を防ぐ
+      await saveHolesForRound(round.id, updatedHoles, totalRoundPutts);
 
       // Update local state with merged holes (preserve scoreResult from UI state)
       const updatedRound: Round = {

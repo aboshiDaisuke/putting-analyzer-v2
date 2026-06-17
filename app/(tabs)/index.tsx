@@ -8,7 +8,6 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { cardShadow } from "@/lib/card-shadow";
 import { getRounds, getUserProfile } from "@/lib/storage";
-import { supabase } from "@/lib/supabase";
 import { calculateBasicStats, calculateOnePuttRate, calculateThreePuttRate, formatDate } from "@/lib/analytics";
 import { Round, UserProfile } from "@/lib/types";
 
@@ -20,14 +19,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
+    // 認証は (tabs)/_layout のガードで解決済み。ここでは取得失敗のみ握りつぶす。
     try {
-      // 認証ガードのリダイレクト前に一瞬マウントされるため、
-      // 未ログイン時はクエリを投げない（401の未処理エラーで dev のLogBoxが全画面になる）
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) return;
-
       const [roundsData, profileData] = await Promise.all([
         getRounds(),
         getUserProfile(),

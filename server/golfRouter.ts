@@ -384,6 +384,9 @@ export const holesRouter = router({
       z.object({
         roundId: z.number().int(),
         holes: z.array(holeInputSchema).max(18),
+        // ラウンド合計パット数。指定時はホール保存と同じミューテーション内で
+        // 更新し、「ホールは保存されたが合計は古いまま」という部分保存を防ぐ。
+        roundTotalPutts: z.number().int().min(0).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -409,6 +412,13 @@ export const holesRouter = router({
           return { ...hole, putts: savedPutts };
         }),
       );
+
+      // ラウンドの totalPutts を同一リクエストで更新（部分保存の回避）。
+      if (input.roundTotalPutts !== undefined) {
+        await updateRound(input.roundId, ctx.user.id, {
+          totalPutts: input.roundTotalPutts,
+        });
+      }
 
       return { roundId: input.roundId, holes: savedHoles };
     }),

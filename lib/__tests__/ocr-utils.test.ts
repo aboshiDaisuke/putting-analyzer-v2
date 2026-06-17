@@ -3,6 +3,8 @@ import {
   convertOcrPuttToAppPutt,
   convertOcrHoleToAppHole,
   convertOcrBatchToHoles,
+  normalizeOcrHole,
+  normalizeOcrResults,
   OcrHoleData,
   OcrPuttData,
 } from "../ocr-utils";
@@ -201,6 +203,103 @@ describe("OCR Utils", () => {
       const result = convertOcrBatchToHoles(ocrResults);
       expect(result).toHaveLength(1);
       expect(result[0].holeNumber).toBe(1);
+    });
+  });
+
+  describe("normalizeOcrHole", () => {
+    it("always returns exactly 3 putts numbered 1/2/3 even if model omits them", () => {
+      const out = normalizeOcrHole({ hole: 5, putts: [{ cupIn: true }] });
+      expect(out.putts).toHaveLength(3);
+      expect(out.putts.map((p) => p.puttNumber)).toEqual([1, 2, 3]);
+      expect(out.putts[0].cupIn).toBe(true);
+      expect(out.putts[1].cupIn).toBe(false);
+      expect(out.putts[2].cupIn).toBe(false);
+    });
+
+    it("truncates extra putts to 3 and forces puttNumber by position", () => {
+      const out = normalizeOcrHole({
+        hole: 2,
+        putts: [
+          { puttNumber: 9, result: "P" },
+          { puttNumber: 9, result: "Bo" },
+          { puttNumber: 9, result: "E" },
+          { puttNumber: 9, result: "Ba" },
+        ],
+      });
+      expect(out.putts).toHaveLength(3);
+      expect(out.putts.map((p) => p.puttNumber)).toEqual([1, 2, 3]);
+      expect(out.putts[2].result).toBe("E");
+    });
+
+    it("nullifies out-of-range hole numbers (1-18)", () => {
+      expect(normalizeOcrHole({ hole: 0 }).hole).toBeNull();
+      expect(normalizeOcrHole({ hole: 19 }).hole).toBeNull();
+      expect(normalizeOcrHole({ hole: 7 }).hole).toBe(7);
+    });
+
+    it("nullifies out-of-range putt length (1-20m) and rounds valid ones", () => {
+      const mk = (lengthMeters: unknown) =>
+        normalizeOcrHole({ hole: 1, putts: [{ lengthMeters }] }).putts[0].lengthMeters;
+      expect(mk(88)).toBeNull(); // 読み間違いの巨大値
+      expect(mk(0)).toBeNull();
+      expect(mk(6)).toBe(6);
+      expect(mk(6.7)).toBe(7); // 丸め
+    });
+
+    it("coerces numeric strings like '8m' and rejects garbage", () => {
+      const mk = (lengthMeters: unknown) =>
+        normalizeOcrHole({ hole: 1, putts: [{ lengthMeters }] }).putts[0].lengthMeters;
+      expect(mk("8m")).toBe(8);
+      expect(mk("")).toBeNull();
+      expect(mk("abc")).toBeNull();
+    });
+
+    it("rejects invalid enum values for result/lineUD/lineLR", () => {
+      const out = normalizeOcrHole({
+        hole: 1,
+        putts: [{ result: "X", lineUD: "Z", lineLR: "Q" }],
+      });
+      expect(out.putts[0].result).toBeNull();
+      expect(out.putts[0].lineUD).toBeNull();
+      expect(out.putts[0].lineLR).toBeNull();
+    });
+
+    it("treats non-boolean cupIn as false (only literal true is true)", () => {
+      const mk = (cupIn: unknown) =>
+        normalizeOcrHole({ hole: 1, putts: [{ cupIn }] }).putts[0].cupIn;
+      expect(mk(true)).toBe(true);
+      expect(mk("true")).toBe(false);
+      expect(mk(1)).toBe(false);
+    });
+
+    it("handles a non-object or array payload defensively", () => {
+      const fromNull = normalizeOcrHole(null);
+      expect(fromNull.hole).toBeNull();
+      expect(fromNull.putts).toHaveLength(3);
+      // 配列で返された場合は先頭要素を採用
+      expect(normalizeOcrHole([{ hole: 4 }]).hole).toBe(4);
+    });
+
+    it("trims date/course and nullifies empties", () => {
+      const out = normalizeOcrHole({ hole: 1, date: "  20260507 ", course: "  " });
+      expect(out.date).toBe("20260507");
+      expect(out.course).toBeNull();
+    });
+  });
+
+  describe("normalizeOcrResults", () => {
+    it("normalizes a single object into a one-element array", () => {
+      const out = normalizeOcrResults({ hole: 3 });
+      expect(out).toHaveLength(1);
+      expect(out[0].hole).toBe(3);
+      expect(out[0].putts).toHaveLength(3);
+    });
+
+    it("normalizes each element of an array", () => {
+      const out = normalizeOcrResults([{ hole: 1 }, { hole: 99 }]);
+      expect(out).toHaveLength(2);
+      expect(out[0].hole).toBe(1);
+      expect(out[1].hole).toBeNull(); // 範囲外
     });
   });
 });

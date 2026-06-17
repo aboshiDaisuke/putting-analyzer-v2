@@ -674,6 +674,7 @@ interface SaveHolesResult {
 export async function saveHolesForRound(
   roundId: string,
   holes: HoleData[],
+  roundTotalPutts?: number,
 ): Promise<SaveHolesResult> {
   const numRoundId = toNumericId(roundId);
   if (isNaN(numRoundId)) throw new Error(`Invalid roundId: ${roundId}`);
@@ -708,6 +709,8 @@ export async function saveHolesForRound(
   const result = await trpcMutate<UpsertHolesResult>("golf.holes.upsertHoles", {
     roundId: numRoundId,
     holes: holesInput,
+    // 指定時はラウンドの totalPutts もサーバー側で同時更新（部分保存の回避）
+    ...(roundTotalPutts !== undefined ? { roundTotalPutts } : {}),
   });
 
   // Map DB holes back to client HoleData, preserving scoreResult from input

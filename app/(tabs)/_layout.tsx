@@ -1,14 +1,23 @@
-import { Tabs } from "expo-router";
+import { Tabs, Redirect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Platform } from "react-native";
 import { useColors } from "@/hooks/use-colors";
+import { useSession } from "@/lib/session-context";
 
 export default function TabLayout() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const session = useSession();
+
+  // 認証状態が解決するまでタブ配下の画面（とそのデータ取得）をマウントしない。
+  // これにより index / rounds / analytics / profile の各 useFocusEffect が
+  // 未ログイン状態でフェッチして 401 になるのを画面ごとではなく一箇所で防ぐ。
+  if (session === undefined) return null; // 読み込み中
+  if (!session) return <Redirect href="/login" />; // 未ログイン
+
   const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 8);
   const tabBarHeight = 56 + bottomPadding;
 
