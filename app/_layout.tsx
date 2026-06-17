@@ -16,6 +16,7 @@ import type { EdgeInsets, Rect } from "react-native-safe-area-context";
 
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { SessionProvider, useSession } from "@/lib/session-context";
+import { AnimatedSplash } from "@/components/animated-splash";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -47,6 +48,35 @@ function AuthGuard() {
   }, [session, segments]);
 
   return null;
+}
+
+/**
+ * 認証ガード・ルーティング・ブランドスプラッシュをまとめる内側シェル。
+ * SessionProvider 配下に置くことで useSession() を参照できる。
+ */
+function AppShell() {
+  const session = useSession();
+  const [splashVisible, setSplashVisible] = useState(true);
+
+  return (
+    <>
+      <AuthGuard />
+      {/* Default to hiding native headers so raw route segments don't appear */}
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="login" />
+        <Stack.Screen name="oauth/callback" />
+      </Stack>
+      <StatusBar style="auto" />
+      {splashVisible && (
+        <AnimatedSplash
+          // 認証状態が解決するまで（＝ログイン/ホームのちらつき防止）スプラッシュを維持
+          ready={session !== undefined}
+          onHidden={() => setSplashVisible(false)}
+        />
+      )}
+    </>
+  );
 }
 
 export default function RootLayout() {
@@ -91,14 +121,7 @@ export default function RootLayout() {
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
           <SessionProvider>
-            <AuthGuard />
-            {/* Default to hiding native headers so raw route segments don't appear */}
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="login" />
-              <Stack.Screen name="oauth/callback" />
-            </Stack>
-            <StatusBar style="auto" />
+            <AppShell />
           </SessionProvider>
         </QueryClientProvider>
       </trpc.Provider>
