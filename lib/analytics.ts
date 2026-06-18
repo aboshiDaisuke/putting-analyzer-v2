@@ -6,16 +6,10 @@ import {
   DistanceStats,
   SlopeStats,
   GreenSpeedStats,
-  MentalStatsItem,
-  TouchStatsItem,
   SlopeLeftRightStatsItem,
-  MissedDirectionStatsItem,
   MetadataAvgPuttsItem,
   SlopeUpDown,
   SlopeLeftRight,
-  MentalState,
-  PuttStrength,
-  MissedDirection,
   LABELS,
 } from './types';
 
@@ -185,42 +179,6 @@ export function calculateGreenSpeedStats(rounds: Round[]): GreenSpeedStats[] {
   });
 }
 
-// 心理状態別統計
-export function calculateMentalStats(rounds: Round[]): MentalStatsItem[] {
-  const firstPutts = extractFirstPutts(rounds);
-  const states: MentalState[] = ['P', 1, 2, 3, 4, 5, 'N'];
-  
-  return states.map(state => {
-    const puttsWithState = firstPutts.filter(({ putt }) => putt.mental === state);
-    const cupIns = puttsWithState.filter(({ putt }) => putt.cupIn).length;
-    
-    return {
-      state,
-      attempts: puttsWithState.length,
-      cupIns,
-      rate: puttsWithState.length > 0 ? (cupIns / puttsWithState.length) * 100 : 0,
-    };
-  });
-}
-
-// タッチ強度別カップイン率（1stパット）
-export function calculateTouchStats(rounds: Round[]): TouchStatsItem[] {
-  const firstPutts = extractFirstPutts(rounds);
-  const touches: PuttStrength[] = [1, 2, 3, 4, 5];
-
-  return touches.map(touch => {
-    const puttsWithTouch = firstPutts.filter(({ putt }) => putt.touch === touch);
-    const cupIns = puttsWithTouch.filter(({ putt }) => putt.cupIn).length;
-
-    return {
-      touch,
-      attempts: puttsWithTouch.length,
-      cupIns,
-      rate: puttsWithTouch.length > 0 ? (cupIns / puttsWithTouch.length) * 100 : 0,
-    };
-  });
-}
-
 // 左右傾斜別カップイン率（1stパット）
 export function calculateSlopeLeftRightStats(rounds: Round[]): SlopeLeftRightStatsItem[] {
   const firstPutts = extractFirstPutts(rounds);
@@ -235,24 +193,6 @@ export function calculateSlopeLeftRightStats(rounds: Round[]): SlopeLeftRightSta
       attempts: puttsWithSlope.length,
       cupIns,
       rate: puttsWithSlope.length > 0 ? (cupIns / puttsWithSlope.length) * 100 : 0,
-    };
-  });
-}
-
-// ミス方向別傾向（cupIn=false の全パット対象）
-export function calculateMissedDirectionStats(rounds: Round[]): MissedDirectionStatsItem[] {
-  const allPutts = extractAllPutts(rounds);
-  const missedPutts = allPutts.filter(({ putt }) => !putt.cupIn && putt.missedDirection != null);
-  const totalMissed = missedPutts.length;
-  const directions: MissedDirection[] = [1, 2, 3, 4, 5];
-
-  return directions.map(direction => {
-    const count = missedPutts.filter(({ putt }) => putt.missedDirection === direction).length;
-
-    return {
-      direction,
-      count,
-      rate: totalMissed > 0 ? (count / totalMissed) * 100 : 0,
     };
   });
 }
@@ -321,11 +261,7 @@ export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
     distanceStats: calculateDistanceStats(rounds),
     slopeStats: calculateSlopeStats(rounds),
     greenSpeedStats: calculateGreenSpeedStats(rounds),
-    mentalStats: calculateMentalStats(rounds),
-    // 新規7項目
-    touchStats: calculateTouchStats(rounds),
     slopeLeftRightStats: calculateSlopeLeftRightStats(rounds),
-    missedDirectionStats: calculateMissedDirectionStats(rounds),
     putterStats: calculatePutterStats(rounds),
     grassTypeStats: calculateGrassTypeStats(rounds),
     weatherStats: calculateWeatherStats(rounds),

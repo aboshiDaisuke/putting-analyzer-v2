@@ -46,7 +46,7 @@ export default function AnalyticsScreen() {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     technique: true,
     environment: false,
-    mental: false,
+    equipment: false,
   });
 
   const toggleGroup = (group: string) => {
@@ -133,7 +133,7 @@ export default function AnalyticsScreen() {
             groupKey="technique"
             expanded={expandedGroups.technique}
             onToggle={toggleGroup}
-            sectionCount={5}
+            sectionCount={3}
             colors={colors}
           >
             {/* 距離別成功率 */}
@@ -198,48 +198,6 @@ export default function AnalyticsScreen() {
                 <Text className="text-muted text-center py-4">データなし</Text>
               )}
             </View>
-
-            {/* タッチ強度別カップイン率 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
-              <Text className="text-lg font-semibold text-foreground mb-4">
-                タッチ強度別カップイン率（1stパット）
-              </Text>
-              {summary.touchStats
-                .filter((s) => s.attempts > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.touch}
-                    label={LABELS.puttStrength[stat.touch]}
-                    value={stat.rate}
-                    count={stat.attempts}
-                    color={colors.warning}
-                  />
-                ))}
-              {summary.touchStats.every((s) => s.attempts === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
-            </View>
-
-            {/* ミス方向別傾向 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
-              <Text className="text-lg font-semibold text-foreground mb-4">
-                ミス方向別傾向（全パット・ミスのみ）
-              </Text>
-              {summary.missedDirectionStats
-                .filter((s) => s.count > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.direction}
-                    label={`方向 ${stat.direction}`}
-                    value={stat.rate}
-                    count={stat.count}
-                    color={colors.error}
-                  />
-                ))}
-              {summary.missedDirectionStats.every((s) => s.count === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
-            </View>
           </SectionGroup>
 
           {/* ── グループB: 環境要因 ── */}
@@ -297,42 +255,15 @@ export default function AnalyticsScreen() {
             <MetadataSection title="コース別平均パット" data={summary.courseStats} />
           </SectionGroup>
 
-          {/* ── グループC: メンタル・装備 ── */}
+          {/* ── グループC: 装備 ── */}
           <SectionGroup
-            title="メンタル・装備"
-            groupKey="mental"
-            expanded={expandedGroups.mental}
+            title="装備"
+            groupKey="equipment"
+            expanded={expandedGroups.equipment}
             onToggle={toggleGroup}
-            sectionCount={2}
+            sectionCount={1}
             colors={colors}
           >
-            {/* 心理状態別 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
-              <Text className="text-lg font-semibold text-foreground mb-4">
-                心理状態別カップイン率（1stパット）
-              </Text>
-              {summary.mentalStats
-                .filter((s) => s.attempts > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.state}
-                    label={LABELS.mentalState[stat.state]}
-                    value={stat.rate}
-                    count={stat.attempts}
-                    color={
-                      (stat.state === 'P' || stat.state === 1 || stat.state === 2)
-                        ? colors.success
-                        : (stat.state === 'N' || stat.state === 4 || stat.state === 5)
-                        ? colors.error
-                        : colors.warning
-                    }
-                  />
-                ))}
-              {summary.mentalStats.every((s) => s.attempts === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
-            </View>
-
             <MetadataSection title="パター別平均パット" data={summary.putterStats} />
           </SectionGroup>
         </View>

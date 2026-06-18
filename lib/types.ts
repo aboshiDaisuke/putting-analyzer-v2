@@ -91,15 +91,6 @@ export type SlopeUpDown = 'flat' | 'uphill' | 'downhill' | 'up_down' | 'down_up'
 // ライン（左右）- カードの Line(L/R): St, L, R, LR, RL に対応
 export type SlopeLeftRight = 'straight' | 'left' | 'right' | 'left_right' | 'right_left';
 
-// 心理状態 - カードの Mental(P/N): P, 1, 2, 3, 4, 5, N に対応
-export type MentalState = 'P' | 1 | 2 | 3 | 4 | 5 | 'N';
-
-// タッチ強度（1-5: 弱 to 強）- カードの Touch(弱1-5強) に対応
-export type PuttStrength = 1 | 2 | 3 | 4 | 5;
-
-// ミス方向（1-5）- カードの Missed Direction に対応
-export type MissedDirection = 1 | 2 | 3 | 4 | 5;
-
 // パットデータ - カードの各パットセクションに完全対応
 export interface PuttData {
   strokeNumber: 1 | 2 | 3; // 1st/2nd/3rd Putt
@@ -109,11 +100,8 @@ export interface PuttData {
   lengthSteps: number | null; // カードの Length st - 歩数
   lengthMeters: number | null; // カードの Length m - メートル直入力
   distanceMeters: number; // 計算された距離（メートル）= 歩数 × 歩幅
-  missedDirection: MissedDirection | null; // カードの Missed Direction 1-5
-  touch: PuttStrength | null; // カードの Touch(弱1-5強)
   lineUD: SlopeUpDown; // カードの Line(U/D): F, U, D, UD, DU
   lineLR: SlopeLeftRight; // カードの Line(L/R): St, L, R, LR, RL
-  mental: MentalState | null; // カードの Mental(P/N): P, 1, 2, 3, 4, 5, N（未記入時はnull）
 }
 
 // ホールデータ
@@ -137,11 +125,7 @@ export interface AnalyticsSummary {
   distanceStats: DistanceStats[];
   slopeStats: SlopeStats[];
   greenSpeedStats: GreenSpeedStats[];
-  mentalStats: MentalStatsItem[];
-  // 新規7項目
-  touchStats: TouchStatsItem[];
   slopeLeftRightStats: SlopeLeftRightStatsItem[];
-  missedDirectionStats: MissedDirectionStatsItem[];
   putterStats: MetadataAvgPuttsItem[];
   grassTypeStats: MetadataAvgPuttsItem[];
   weatherStats: MetadataAvgPuttsItem[];
@@ -168,34 +152,12 @@ export interface GreenSpeedStats {
   rounds: number;
 }
 
-export interface MentalStatsItem {
-  state: MentalState;
-  attempts: number;
-  cupIns: number;
-  rate: number;
-}
-
-// タッチ強度別統計
-export interface TouchStatsItem {
-  touch: PuttStrength;
-  attempts: number;
-  cupIns: number;
-  rate: number;
-}
-
 // 左右傾斜別統計
 export interface SlopeLeftRightStatsItem {
   slope: SlopeLeftRight;
   attempts: number;
   cupIns: number;
   rate: number;
-}
-
-// ミス方向別統計（cupIn=false の全パット対象）
-export interface MissedDirectionStatsItem {
-  direction: MissedDirection;
-  count: number;
-  rate: number; // 全ミスパット中の割合
 }
 
 // メタデータ別平均パット統計（汎用）
@@ -301,29 +263,6 @@ export const LABELS = {
     left_right: 'LR',
     right_left: 'RL',
   },
-  mentalState: {
-    P: 'P (+)',
-    1: '1',
-    2: '2',
-    3: '3',
-    4: '4',
-    5: '5',
-    N: 'N (-)',
-  },
-  puttStrength: {
-    1: '1 弱',
-    2: '2',
-    3: '3',
-    4: '4',
-    5: '5 強',
-  },
-  missedDirection: {
-    1: '1',
-    2: '2',
-    3: '3',
-    4: '4',
-    5: '5',
-  },
   putterRanking: {
     ace: 'Ace',
     '2nd': '2nd',
@@ -356,15 +295,6 @@ export const CARD_TO_APP = {
     LR: 'left_right' as SlopeLeftRight,
     RL: 'right_left' as SlopeLeftRight,
   },
-  mental: {
-    P: 'P' as MentalState,
-    1: 1 as MentalState,
-    2: 2 as MentalState,
-    3: 3 as MentalState,
-    4: 4 as MentalState,
-    5: 5 as MentalState,
-    N: 'N' as MentalState,
-  },
 };
 
 // アプリ内部値 → OCRカード表記のマッピング（逆変換）
@@ -390,10 +320,7 @@ export function createDefaultPutt(strokeNumber: 1 | 2 | 3): PuttData {
     lengthSteps: null,
     lengthMeters: null,
     distanceMeters: 0,
-    missedDirection: null,
-    touch: null,
     lineUD: 'flat',
     lineLR: 'straight',
-    mental: null,
   };
 }

@@ -174,11 +174,8 @@ interface DbPutt {
   lengthSteps: number | null;
   lengthMeters: number | null;
   distanceMeters: number | null;
-  missedDirection: number | null;
-  touch: number | null;
   lineUD: string | null;
   lineLR: string | null;
-  mental: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
@@ -235,21 +232,9 @@ function dbPuttToClient(db: DbPutt): PuttData {
     lengthSteps: db.lengthSteps,
     lengthMeters: db.lengthMeters,
     distanceMeters: db.distanceMeters ?? 0,
-    missedDirection: (db.missedDirection as PuttData["missedDirection"]) ?? null,
-    touch: (db.touch as PuttData["touch"]) ?? null,
     lineUD: (db.lineUD as PuttData["lineUD"]) ?? "flat",
     lineLR: (db.lineLR as PuttData["lineLR"]) ?? "straight",
-    mental: parseMentalState(db.mental),
   };
-}
-
-function parseMentalState(v: string | null | undefined): PuttData["mental"] {
-  if (v === null || v === undefined) return null;
-  if (v === "P") return "P";
-  if (v === "N") return "N";
-  const n = parseInt(v, 10);
-  if (n >= 1 && n <= 5) return n as 1 | 2 | 3 | 4 | 5;
-  return null;
 }
 
 function dbHoleToClient(db: DbHole): HoleData {
@@ -691,13 +676,8 @@ export async function saveHolesForRound(
       lengthSteps: putt.lengthSteps,
       lengthMeters: putt.lengthMeters,
       distanceMeters: putt.distanceMeters,
-      missedDirection: putt.missedDirection,
-      touch: putt.touch,
       lineUD: putt.lineUD,
       lineLR: putt.lineLR,
-      mental: putt.mental !== null && putt.mental !== undefined
-        ? String(putt.mental)
-        : null,
     })),
   }));
 

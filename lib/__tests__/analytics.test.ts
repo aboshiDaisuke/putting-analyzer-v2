@@ -18,11 +18,8 @@ const createPutt = (overrides: Partial<PuttData> = {}): PuttData => ({
   lengthSteps: null,
   lengthMeters: null,
   distanceMeters: 0,
-  missedDirection: null,
-  touch: null,
   lineUD: "flat",
   lineLR: "straight",
-  mental: 3,
   ...overrides,
 });
 

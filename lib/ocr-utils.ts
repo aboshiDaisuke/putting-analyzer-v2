@@ -69,11 +69,8 @@ export function convertOcrPuttToAppPutt(
     lengthSteps: null,
     lengthMeters: ocrPutt.lengthMeters,
     distanceMeters,
-    missedDirection: null,
-    touch: null,
     lineUD: convertLineUD(ocrPutt.lineUD),
     lineLR: convertLineLR(ocrPutt.lineLR),
-    mental: null,
   };
 }
 
