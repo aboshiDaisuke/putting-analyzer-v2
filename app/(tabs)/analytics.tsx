@@ -1,10 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ScrollView,
   Text,
   View,
   TouchableOpacity,
-  Dimensions,
   LayoutAnimation,
   Platform,
   UIManager,
@@ -13,10 +12,11 @@ import { useFocusEffect } from "@react-navigation/native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { BarChart, LineChart } from "@/components/analytics-charts";
 import { useColors } from "@/hooks/use-colors";
 import { cardShadow } from "@/lib/card-shadow";
 import { hapticLight } from "@/lib/haptics";
-import { getRounds } from "@/lib/storage";
+import { getRoundsWithHoles } from "@/lib/storage";
 
 // Android（旧アーキテクチャ）でLayoutAnimationを有効化
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -25,7 +25,6 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 import {
   calculateAnalyticsSummary,
   filterRoundsByPeriod,
-  formatPercentage,
 } from "@/lib/analytics";
 import { Round, AnalyticsSummary, MetadataAvgPuttsItem, LABELS } from "@/lib/types";
 
@@ -56,7 +55,7 @@ export default function AnalyticsScreen() {
   };
 
   const loadData = useCallback(async () => {
-    const allRounds = await getRounds();
+    const allRounds = await getRoundsWithHoles();
     setRounds(allRounds);
     const filtered = filterRoundsByPeriod(allRounds, period);
     setSummary(calculateAnalyticsSummary(filtered));
@@ -68,9 +67,43 @@ export default function AnalyticsScreen() {
     }, [loadData])
   );
 
-  const filteredRounds = filterRoundsByPeriod(rounds, period);
+  // チャートの onLayout 起因の再レンダーで全ラウンドを再フィルタしないようメモ化
+  const filteredRounds = useMemo(
+    () => filterRoundsByPeriod(rounds, period),
+    [rounds, period],
+  );
 
-  if (!summary || filteredRounds.length === 0) {
+  // チャート用データ配列を summary 単位で1回だけ生成（毎レンダーの再 map と
+  // 新規参照によるチャートの再描画を防ぐ）。
+  const chartData = useMemo(() => {
+    if (!summary) return null;
+    return {
+      trendAvg: summary.trend.map((t) => ({ label: t.label, value: t.avgPutts })),
+      trendOnePutt: summary.trend.map((t) => ({ label: t.label, value: t.onePuttRate })),
+      distance: summary.distanceStats.map((s) => ({
+        label: s.range,
+        value: s.rate,
+        count: s.attempts,
+      })),
+      slopeUpDown: summary.slopeStats.map((s) => ({
+        label: LABELS.slopeUpDownShort[s.slope],
+        value: s.rate,
+        count: s.attempts,
+      })),
+      slopeLeftRight: summary.slopeLeftRightStats.map((s) => ({
+        label: LABELS.slopeLeftRightShort[s.slope],
+        value: s.rate,
+        count: s.attempts,
+      })),
+      greenSpeed: summary.greenSpeedStats.map((s) => ({
+        label: s.speedRange,
+        value: s.averagePutts,
+        count: s.rounds,
+      })),
+    };
+  }, [summary]);
+
+  if (!summary || !chartData || filteredRounds.length === 0) {
     return (
       <ScreenContainer className="p-4">
         <Text className="text-2xl font-bold text-foreground mb-4">分析</Text>
@@ -127,6 +160,30 @@ export default function AnalyticsScreen() {
             </View>
           </View>
 
+          {/* スコア推移（時系列・常時表示） */}
+          <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+            <Text className="text-lg font-semibold text-foreground mb-1">
+              平均パット推移（/H）
+            </Text>
+            <LineChart
+              data={chartData.trendAvg}
+              color={colors.primary}
+              unit="/H"
+              decimals={2}
+            />
+            <Text className="text-lg font-semibold text-foreground mb-1 mt-4">
+              1パット率推移（%）
+            </Text>
+            <LineChart
+              data={chartData.trendOnePutt}
+              color={colors.success}
+              unit="%"
+              decimals={0}
+              yMin={0}
+              yMax={100}
+            />
+          </View>
+
           {/* ── グループA: パット技術 ── */}
           <SectionGroup
             title="パット技術"
@@ -141,20 +198,12 @@ export default function AnalyticsScreen() {
               <Text className="text-lg font-semibold text-foreground mb-4">
                 距離別カップイン率（1stパット）
               </Text>
-              {summary.distanceStats
-                .filter((s) => s.attempts > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.range}
-                    label={stat.range}
-                    value={stat.rate}
-                    count={stat.attempts}
-                    color={colors.primary}
-                  />
-                ))}
-              {summary.distanceStats.every((s) => s.attempts === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
+              <BarChart
+                data={chartData.distance}
+                color={colors.primary}
+                maxValue={100}
+                unit="%"
+              />
             </View>
 
             {/* 傾斜別成功率（上下） */}
@@ -162,20 +211,12 @@ export default function AnalyticsScreen() {
               <Text className="text-lg font-semibold text-foreground mb-4">
                 傾斜別カップイン率 - 上下（1stパット）
               </Text>
-              {summary.slopeStats
-                .filter((s) => s.attempts > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.slope}
-                    label={LABELS.slopeUpDown[stat.slope]}
-                    value={stat.rate}
-                    count={stat.attempts}
-                    color={colors.accent}
-                  />
-                ))}
-              {summary.slopeStats.every((s) => s.attempts === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
+              <BarChart
+                data={chartData.slopeUpDown}
+                color={colors.accent}
+                maxValue={100}
+                unit="%"
+              />
             </View>
 
             {/* 左右傾斜別成功率 */}
@@ -183,20 +224,12 @@ export default function AnalyticsScreen() {
               <Text className="text-lg font-semibold text-foreground mb-4">
                 傾斜別カップイン率 - 左右（1stパット）
               </Text>
-              {summary.slopeLeftRightStats
-                .filter((s) => s.attempts > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.slope}
-                    label={LABELS.slopeLeftRight[stat.slope]}
-                    value={stat.rate}
-                    count={stat.attempts}
-                    color={colors.accent}
-                  />
-                ))}
-              {summary.slopeLeftRightStats.every((s) => s.attempts === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
+              <BarChart
+                data={chartData.slopeLeftRight}
+                color={colors.accent}
+                maxValue={100}
+                unit="%"
+              />
             </View>
           </SectionGroup>
 
@@ -214,40 +247,12 @@ export default function AnalyticsScreen() {
               <Text className="text-lg font-semibold text-foreground mb-4">
                 グリーンスピード別平均パット
               </Text>
-              {summary.greenSpeedStats
-                .filter((s) => s.rounds > 0)
-                .map((stat, _, arr) => {
-                  const maxValue = Math.max(...arr.map((s) => s.averagePutts), 0);
-                  const barWidth = maxValue > 0 ? (stat.averagePutts / maxValue) * 100 : 0;
-                  return (
-                    <View
-                      key={stat.speedRange}
-                      className="py-2 border-b border-border"
-                    >
-                      <View className="flex-row items-center justify-between mb-1">
-                        <Text className="text-foreground">{stat.speedRange}</Text>
-                        <View className="flex-row items-baseline">
-                          <Text className="text-xl font-bold text-foreground">
-                            {stat.averagePutts.toFixed(2)}
-                          </Text>
-                          <Text className="text-muted text-sm ml-1">/H</Text>
-                          <Text className="text-muted text-xs ml-2">
-                            ({stat.rounds}R)
-                          </Text>
-                        </View>
-                      </View>
-                      <View className="w-full h-1.5 bg-border rounded-full overflow-hidden">
-                        <View
-                          className="h-full bg-primary rounded-full"
-                          style={{ width: `${barWidth}%` }}
-                        />
-                      </View>
-                    </View>
-                  );
-                })}
-              {summary.greenSpeedStats.every((s) => s.rounds === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
+              <BarChart
+                data={chartData.greenSpeed}
+                color={colors.primary}
+                unit="/H"
+                decimals={2}
+              />
             </View>
 
             <MetadataSection title="芝の種類別平均パット" data={summary.grassTypeStats} />
@@ -424,42 +429,6 @@ function MetadataSection({
       ) : (
         <Text className="text-muted text-center py-4">データなし</Text>
       )}
-    </View>
-  );
-}
-
-function BarRow({
-  label,
-  value,
-  count,
-  color,
-}: {
-  label: string;
-  value: number;
-  count: number;
-  color: string;
-}) {
-  const screenWidth = Dimensions.get("window").width;
-  const maxBarWidth = screenWidth - 180;
-  const barWidth = Math.max((value / 100) * maxBarWidth, 4);
-
-  return (
-    <View className="flex-row items-center py-2 border-b border-border">
-      <Text className="text-foreground w-24">{label}</Text>
-      <View className="flex-1 flex-row items-center">
-        <View
-          style={{
-            width: barWidth,
-            height: 20,
-            backgroundColor: color,
-            borderRadius: 4,
-          }}
-        />
-        <Text className="text-foreground font-semibold ml-2">
-          {formatPercentage(value)}
-        </Text>
-      </View>
-      <Text className="text-muted text-xs w-12 text-right">n={count}</Text>
     </View>
   );
 }

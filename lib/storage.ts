@@ -152,6 +152,10 @@ export async function getRounds(): Promise<Round[]> {
   return ApiGolf.getRounds();
 }
 
+export async function getRoundsWithHoles(): Promise<Round[]> {
+  return ApiGolf.getRoundsWithHoles();
+}
+
 export async function getRound(id: string): Promise<Round | null> {
   return ApiGolf.getRound(id);
 }

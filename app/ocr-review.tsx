@@ -183,9 +183,11 @@ export default function OcrReviewScreen() {
         router.replace(`/round/${roundId}` as any);
       } else {
         // ─── 後方互換：新規ラウンドとして保存 ──────────────────────────
-        const firstResult = ocrResults[0];
-        const dateStr = firstResult.date || "";
-        const courseName = firstResult.course || "未設定";
+        // ホールが無くスキップされるカードは convertOcrBatchToHoles で除外されるため、
+        // 日付/コースは実際にホールデータを持つ最初のカードから採用する。
+        const firstValid = ocrResults.find((r) => r.hole != null) ?? ocrResults[0];
+        const dateStr = firstValid.date || "";
+        const courseName = firstValid.course || "未設定";
 
         const now = new Date();
         let roundDate = now.toISOString();

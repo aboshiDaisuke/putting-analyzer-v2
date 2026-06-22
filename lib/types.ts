@@ -126,6 +126,7 @@ export interface AnalyticsSummary {
   slopeStats: SlopeStats[];
   greenSpeedStats: GreenSpeedStats[];
   slopeLeftRightStats: SlopeLeftRightStatsItem[];
+  trend: RoundTrendItem[]; // ラウンドごとの推移（日付昇順）
   putterStats: MetadataAvgPuttsItem[];
   grassTypeStats: MetadataAvgPuttsItem[];
   weatherStats: MetadataAvgPuttsItem[];
@@ -165,6 +166,13 @@ export interface MetadataAvgPuttsItem {
   label: string;
   averagePutts: number;
   rounds: number;
+}
+
+// ラウンドごとの推移（時系列グラフ用、日付昇順）
+export interface RoundTrendItem {
+  label: string; // 短縮表示 "M/D"
+  avgPutts: number; // 平均パット/ホール
+  onePuttRate: number; // 1パット率(%)
 }
 
 // ローカルストレージのキー

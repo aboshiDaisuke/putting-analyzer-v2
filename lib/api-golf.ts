@@ -462,7 +462,7 @@ export async function getRounds(): Promise<Round[]> {
   try {
     const list = await trpcQuery<DbRound[]>("golf.rounds.list");
     if (!list || list.length === 0) return [];
-    // The list endpoint does NOT include holes; add empty holes array
+    // The list endpoint does NOT include holes; dbRoundToClient pads to 18 empty holes.
     const rounds = list.map((r) => dbRoundToClient(r));
     // Sort descending by date (same as original AsyncStorage implementation)
     return rounds.sort(
@@ -470,6 +470,26 @@ export async function getRounds(): Promise<Round[]> {
     );
   } catch (error) {
     console.error("[api-golf] getRounds error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Like getRounds, but with holes and putts hydrated. Use for analytics, where
+ * per-hole/per-putt stats (1-putt rate, distance/slope breakdowns) are needed.
+ */
+export async function getRoundsWithHoles(): Promise<Round[]> {
+  try {
+    const list = await trpcQuery<(DbRound & { holes: DbHole[] })[]>(
+      "golf.rounds.listWithHoles",
+    );
+    if (!list || list.length === 0) return [];
+    const rounds = list.map((r) => dbRoundToClient(r));
+    return rounds.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+  } catch (error) {
+    console.error("[api-golf] getRoundsWithHoles error:", error);
     throw error;
   }
 }

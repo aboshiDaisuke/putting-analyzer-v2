@@ -8,6 +8,7 @@ import {
   GreenSpeedStats,
   SlopeLeftRightStatsItem,
   MetadataAvgPuttsItem,
+  RoundTrendItem,
   SlopeUpDown,
   SlopeLeftRight,
   LABELS,
@@ -248,6 +249,25 @@ export function calculateCourseStats(rounds: Round[]): MetadataAvgPuttsItem[] {
   return calculateMetadataAvgPutts(rounds, r => r.courseName || '不明');
 }
 
+// ラウンドごとの推移（日付昇順）。時系列グラフ用。
+export function calculateRoundTrend(rounds: Round[]): RoundTrendItem[] {
+  return [...rounds]
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .map((round) => {
+      // 実際にプレーしたホールのみで集計する（list 取得時に dbRoundToClient が
+      // 18ホールへ補完する空ホール totalPutts=0 を分母から除外）。
+      const played = round.holes.filter((h) => h.totalPutts > 0);
+      const holeCount = played.length;
+      const onePuttHoles = played.filter((h) => h.totalPutts === 1).length;
+      const d = new Date(round.date);
+      return {
+        label: `${d.getMonth() + 1}/${d.getDate()}`,
+        avgPutts: holeCount > 0 ? round.totalPutts / holeCount : 0,
+        onePuttRate: holeCount > 0 ? (onePuttHoles / holeCount) * 100 : 0,
+      };
+    });
+}
+
 // 総合分析サマリー
 export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
   const basicStats = calculateBasicStats(rounds);
@@ -262,6 +282,7 @@ export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
     slopeStats: calculateSlopeStats(rounds),
     greenSpeedStats: calculateGreenSpeedStats(rounds),
     slopeLeftRightStats: calculateSlopeLeftRightStats(rounds),
+    trend: calculateRoundTrend(rounds),
     putterStats: calculatePutterStats(rounds),
     grassTypeStats: calculateGrassTypeStats(rounds),
     weatherStats: calculateWeatherStats(rounds),

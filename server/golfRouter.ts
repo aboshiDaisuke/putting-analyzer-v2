@@ -18,6 +18,7 @@ import {
   getPuttsByHoles,
   getRound,
   getRounds,
+  getRoundsWithHoles,
   getUserProfile,
   updateCourse,
   updatePutter,
@@ -254,6 +255,11 @@ export const coursesRouter = router({
 export const roundsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     return getRounds(ctx.user.id);
+  }),
+
+  /** Like list, but with all holes and putts hydrated (for analytics). */
+  listWithHoles: protectedProcedure.query(async ({ ctx }) => {
+    return getRoundsWithHoles(ctx.user.id);
   }),
 
   /** Returns the round with all nested holes and putts. */
