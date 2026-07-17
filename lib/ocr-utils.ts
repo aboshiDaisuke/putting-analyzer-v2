@@ -69,11 +69,8 @@ export function convertOcrPuttToAppPutt(
     lengthSteps: null,
     lengthMeters: ocrPutt.lengthMeters,
     distanceMeters,
-    missedDirection: null,
-    touch: null,
     lineUD: convertLineUD(ocrPutt.lineUD),
     lineLR: convertLineLR(ocrPutt.lineLR),
-    mental: null,
   };
 }
 
@@ -103,6 +100,82 @@ export function convertOcrHoleToAppHole(
     totalPutts: putts.length,
     putts,
   };
+}
+
+// ─── OCR生出力の正規化（LLMの誤り・構造ブレ・範囲外値を除去） ──────────────
+// LLMは指示しても範囲外の数値・不正な列挙値・putts欠落などを返すことがある。
+// 保存前にここで必ず正規化し、データ品質を担保する（サーバー側で適用）。
+
+const RESULT_VALUES = new Set(["E", "Ba", "P", "Bo", "D+"]);
+const LINE_UD_VALUES = new Set(["F", "U", "D"]);
+const LINE_LR_VALUES = new Set(["St", "L", "R"]);
+
+const HOLE_MIN = 1;
+const HOLE_MAX = 18;
+const LENGTH_MIN = 1;
+const LENGTH_MAX = 20;
+
+function toNumberOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string") {
+    // "8m" や全角混じり等に備えて数字・符号・小数点のみ抽出
+    const cleaned = v.replace(/[^0-9.-]/g, "");
+    if (cleaned === "" || cleaned === "-" || cleaned === ".") return null;
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function enumOrNull<T extends string>(v: unknown, allowed: Set<string>): T | null {
+  return typeof v === "string" && allowed.has(v) ? (v as T) : null;
+}
+
+function normalizeOcrPutt(raw: unknown, puttNumber: 1 | 2 | 3): OcrPuttData {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const len = toNumberOrNull(r.lengthMeters);
+  return {
+    puttNumber, // モデルの値ではなく配置順（1st/2nd/3rd）で固定する
+    cupIn: r.cupIn === true,
+    result: enumOrNull(r.result, RESULT_VALUES),
+    lengthMeters:
+      len !== null && len >= LENGTH_MIN && len <= LENGTH_MAX ? Math.round(len) : null,
+    lineUD: enumOrNull(r.lineUD, LINE_UD_VALUES),
+    lineLR: enumOrNull(r.lineLR, LINE_LR_VALUES),
+  };
+}
+
+/** 1枚分のOCR生出力を、必ず3パット・範囲内・正しい型のOcrHoleDataに整える。 */
+export function normalizeOcrHole(raw: unknown): OcrHoleData {
+  // モデルが配列で返した場合は先頭要素を採用
+  const obj = Array.isArray(raw) ? raw[0] : raw;
+  const r = (obj && typeof obj === "object" ? obj : {}) as Record<string, unknown>;
+
+  const holeNum = toNumberOrNull(r.hole);
+  const rawPutts = Array.isArray(r.putts) ? r.putts : [];
+  const putts: OcrPuttData[] = [0, 1, 2].map((i) =>
+    normalizeOcrPutt(rawPutts[i], (i + 1) as 1 | 2 | 3)
+  );
+
+  const date = typeof r.date === "string" && r.date.trim() ? r.date.trim() : null;
+  const course = typeof r.course === "string" && r.course.trim() ? r.course.trim() : null;
+
+  return {
+    hole:
+      holeNum !== null && holeNum >= HOLE_MIN && holeNum <= HOLE_MAX
+        ? Math.round(holeNum)
+        : null,
+    date,
+    course,
+    putts,
+  };
+}
+
+/** 複数枚（または単一）のOCR生出力をまとめて正規化する。 */
+export function normalizeOcrResults(raw: unknown): OcrHoleData[] {
+  const arr = Array.isArray(raw) ? raw : [raw];
+  return arr.map(normalizeOcrHole);
 }
 
 // 複数ホールのOCRデータをまとめてアプリデータに変換

@@ -1,10 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   Text,
   View,
   TouchableOpacity,
-  Dimensions,
   LayoutAnimation,
   Platform,
   UIManager,
@@ -13,10 +12,11 @@ import { useFocusEffect } from "@react-navigation/native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { BarChart, LineChart } from "@/components/analytics-charts";
 import { useColors } from "@/hooks/use-colors";
 import { cardShadow } from "@/lib/card-shadow";
 import { hapticLight } from "@/lib/haptics";
-import { getRounds } from "@/lib/storage";
+import { getRoundsWithHoles } from "@/lib/storage";
 
 // Android（旧アーキテクチャ）でLayoutAnimationを有効化
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -24,10 +24,13 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 }
 import {
   calculateAnalyticsSummary,
-  filterRoundsByPeriod,
-  formatPercentage,
+  generatePracticeInsights,
+  getPeriodCutoffDate,
+  getPlayedHoles,
+  MIN_RELIABLE_PUTT_SAMPLE,
+  MIN_RELIABLE_ROUND_SAMPLE,
 } from "@/lib/analytics";
-import { Round, AnalyticsSummary, MetadataAvgPuttsItem, LABELS } from "@/lib/types";
+import { Round, MetadataAvgPuttsItem, LABELS } from "@/lib/types";
 
 type Period = "week" | "month" | "year" | "all";
 
@@ -38,15 +41,23 @@ const PERIOD_LABELS: Record<Period, string> = {
   all: "全期間",
 };
 
+function toApiDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function AnalyticsScreen() {
   const colors = useColors();
   const [rounds, setRounds] = useState<Round[]>([]);
   const [period, setPeriod] = useState<Period>("all");
-  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const requestIdRef = useRef(0);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     technique: true,
     environment: false,
-    mental: false,
+    equipment: false,
   });
 
   const toggleGroup = (group: string) => {
@@ -56,21 +67,88 @@ export default function AnalyticsScreen() {
   };
 
   const loadData = useCallback(async () => {
-    const allRounds = await getRounds();
-    setRounds(allRounds);
-    const filtered = filterRoundsByPeriod(allRounds, period);
-    setSummary(calculateAnalyticsSummary(filtered));
+    const requestId = ++requestIdRef.current;
+    setIsLoading(true);
+    const cutoff = getPeriodCutoffDate(period);
+
+    try {
+      const loadedRounds = await getRoundsWithHoles(cutoff ? toApiDate(cutoff) : undefined);
+      if (requestId !== requestIdRef.current) return;
+      setRounds(loadedRounds);
+    } catch (error) {
+      if (requestId !== requestIdRef.current) return;
+      console.error("[analytics] Failed to load rounds:", error);
+      setRounds([]);
+    } finally {
+      if (requestId === requestIdRef.current) setIsLoading(false);
+    }
   }, [period]);
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
+      void loadData();
+      return () => {
+        requestIdRef.current++;
+      };
     }, [loadData])
   );
 
-  const filteredRounds = filterRoundsByPeriod(rounds, period);
+  const summary = useMemo(() => calculateAnalyticsSummary(rounds), [rounds]);
+  const practiceInsights = useMemo(() => generatePracticeInsights(rounds), [rounds]);
+  const playedHoleCount = useMemo(
+    () => rounds.reduce((sum, round) => sum + getPlayedHoles(round).length, 0),
+    [rounds],
+  );
 
-  if (!summary || filteredRounds.length === 0) {
+  // チャート用データ配列を summary 単位で1回だけ生成（毎レンダーの再 map と
+  // 新規参照によるチャートの再描画を防ぐ）。
+  const chartData = useMemo(() => {
+    return {
+      trendAvg: summary.trend.map((t) => ({ label: t.label, value: t.avgPutts })),
+      trendOnePutt: summary.trend.map((t) => ({ label: t.label, value: t.onePuttRate })),
+      distance: summary.distanceStats.map((s) => ({
+        label: s.range,
+        value: s.rate,
+        count: s.attempts,
+      })),
+      slopeUpDown: summary.slopeStats.map((s) => ({
+        label: LABELS.slopeUpDownShort[s.slope],
+        value: s.rate,
+        count: s.attempts,
+      })),
+      slopeLeftRight: summary.slopeLeftRightStats.map((s) => ({
+        label: LABELS.slopeLeftRightShort[s.slope],
+        value: s.rate,
+        count: s.attempts,
+      })),
+      greenSpeed: summary.greenSpeedStats.map((s) => ({
+        label: s.speedRange,
+        value: s.averagePutts,
+        count: s.rounds,
+      })),
+      lag: summary.lagAnalysis.buckets.map((bucket) => ({
+        label: bucket.range,
+        value: bucket.threePuttRate,
+        count: bucket.attempts,
+      })),
+      strokesGained: summary.personalStrokesGained.rounds.map((round) => ({
+        label: round.label,
+        value: round.value,
+      })),
+    };
+  }, [summary]);
+
+  if (isLoading) {
+    return (
+      <ScreenContainer className="p-4">
+        <Text className="text-2xl font-bold text-foreground mb-4">分析</Text>
+        <PeriodSelector period={period} onSelect={setPeriod} />
+        <Text className="text-muted text-center py-12">読み込み中...</Text>
+      </ScreenContainer>
+    );
+  }
+
+  if (rounds.length === 0) {
     return (
       <ScreenContainer className="p-4">
         <Text className="text-2xl font-bold text-foreground mb-4">分析</Text>
@@ -95,6 +173,23 @@ export default function AnalyticsScreen() {
           <Text className="text-2xl font-bold text-foreground">分析</Text>
 
           <PeriodSelector period={period} onSelect={setPeriod} />
+
+          {playedHoleCount < MIN_RELIABLE_PUTT_SAMPLE && (
+            <View
+              className="rounded-xl p-3 border"
+              style={{
+                backgroundColor: colors.warning + "14",
+                borderColor: colors.warning + "55",
+              }}
+            >
+              <Text style={{ color: colors.warning, fontWeight: "600" }}>
+                参考値：現在のサンプルは{playedHoleCount}ホールです
+              </Text>
+              <Text className="text-muted text-xs mt-1">
+                {MIN_RELIABLE_PUTT_SAMPLE}ホール以上で傾向の信頼性が高まります
+              </Text>
+            </View>
+          )}
 
           {/* サマリーカード（常時表示） */}
           <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
@@ -127,13 +222,126 @@ export default function AnalyticsScreen() {
             </View>
           </View>
 
+          {/* データから導く次のアクション */}
+          {practiceInsights.length > 0 && (
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground">今回の課題トップ3</Text>
+              <Text className="text-muted text-sm mt-1 mb-3">
+                記録データから改善余地の大きい順に提案します
+              </Text>
+              {practiceInsights.map((insight, index) => (
+                <View
+                  key={insight.id}
+                  className="py-3 border-t border-border"
+                  style={{ flexDirection: "row", gap: 12 }}
+                >
+                  <View
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 14,
+                      backgroundColor: colors.primary,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text style={{ color: "white", fontWeight: "700" }}>{index + 1}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text className="text-foreground font-semibold">{insight.title}</Text>
+                    <Text className="text-muted text-xs mt-1">{insight.summary}</Text>
+                    {insight.sampleSize < MIN_RELIABLE_PUTT_SAMPLE && (
+                      <Text style={{ color: colors.warning, fontSize: 11, marginTop: 3 }}>
+                        サンプル少数・参考値
+                      </Text>
+                    )}
+                    <Text className="text-foreground text-sm mt-2">練習：{insight.practice}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* スコア推移（時系列・常時表示） */}
+          <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+            <Text className="text-lg font-semibold text-foreground mb-1">
+              平均パット推移（/H）
+            </Text>
+            <LineChart
+              data={chartData.trendAvg}
+              color={colors.primary}
+              unit="/H"
+              decimals={2}
+            />
+            <Text className="text-lg font-semibold text-foreground mb-1 mt-4">
+              1パット率推移（%）
+            </Text>
+            <LineChart
+              data={chartData.trendOnePutt}
+              color={colors.success}
+              unit="%"
+              decimals={0}
+              yMin={0}
+              yMax={100}
+            />
+          </View>
+
+          {/* 過去の自分を基準にした簡易SG */}
+          <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+            <Text className="text-lg font-semibold text-foreground">個人基準・簡易SG</Text>
+            <Text className="text-muted text-xs mt-1">
+              過去の距離帯別平均と比較。プラスほど普段の自分より良い
+            </Text>
+            {summary.personalStrokesGained.evaluatedHoles > 0 ? (
+              <>
+                <View className="flex-row mt-4 mb-2">
+                  <View className="flex-1">
+                    <Text className="text-muted text-xs">選択期間の合計</Text>
+                    <Text
+                      style={{
+                        color: summary.personalStrokesGained.total >= 0
+                          ? colors.success
+                          : colors.error,
+                        fontSize: 26,
+                        fontWeight: "700",
+                      }}
+                    >
+                      {summary.personalStrokesGained.total >= 0 ? "+" : ""}
+                      {summary.personalStrokesGained.total.toFixed(2)}
+                    </Text>
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-muted text-xs">1ホールあたり</Text>
+                    <Text className="text-foreground text-2xl font-bold">
+                      {summary.personalStrokesGained.perHole >= 0 ? "+" : ""}
+                      {summary.personalStrokesGained.perHole.toFixed(3)}
+                    </Text>
+                  </View>
+                </View>
+                <LineChart
+                  data={chartData.strokesGained}
+                  color={colors.accent}
+                  unit=""
+                  decimals={2}
+                />
+                <Text className="text-muted text-xs">
+                  評価対象 {summary.personalStrokesGained.evaluatedHoles}H
+                </Text>
+              </>
+            ) : (
+              <Text className="text-muted text-center py-5">
+                距離付きデータを10ホール以上記録すると、次のラウンドから表示されます
+              </Text>
+            )}
+          </View>
+
           {/* ── グループA: パット技術 ── */}
           <SectionGroup
             title="パット技術"
             groupKey="technique"
             expanded={expandedGroups.technique}
             onToggle={toggleGroup}
-            sectionCount={5}
+            sectionCount={4}
             colors={colors}
           >
             {/* 距離別成功率 */}
@@ -141,20 +349,13 @@ export default function AnalyticsScreen() {
               <Text className="text-lg font-semibold text-foreground mb-4">
                 距離別カップイン率（1stパット）
               </Text>
-              {summary.distanceStats
-                .filter((s) => s.attempts > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.range}
-                    label={stat.range}
-                    value={stat.rate}
-                    count={stat.attempts}
-                    color={colors.primary}
-                  />
-                ))}
-              {summary.distanceStats.every((s) => s.attempts === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
+              <BarChart
+                data={chartData.distance}
+                color={colors.primary}
+                maxValue={100}
+                unit="%"
+                referenceThreshold={MIN_RELIABLE_PUTT_SAMPLE}
+              />
             </View>
 
             {/* 傾斜別成功率（上下） */}
@@ -162,20 +363,13 @@ export default function AnalyticsScreen() {
               <Text className="text-lg font-semibold text-foreground mb-4">
                 傾斜別カップイン率 - 上下（1stパット）
               </Text>
-              {summary.slopeStats
-                .filter((s) => s.attempts > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.slope}
-                    label={LABELS.slopeUpDown[stat.slope]}
-                    value={stat.rate}
-                    count={stat.attempts}
-                    color={colors.accent}
-                  />
-                ))}
-              {summary.slopeStats.every((s) => s.attempts === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
+              <BarChart
+                data={chartData.slopeUpDown}
+                color={colors.accent}
+                maxValue={100}
+                unit="%"
+                referenceThreshold={MIN_RELIABLE_PUTT_SAMPLE}
+              />
             </View>
 
             {/* 左右傾斜別成功率 */}
@@ -183,61 +377,51 @@ export default function AnalyticsScreen() {
               <Text className="text-lg font-semibold text-foreground mb-4">
                 傾斜別カップイン率 - 左右（1stパット）
               </Text>
-              {summary.slopeLeftRightStats
-                .filter((s) => s.attempts > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.slope}
-                    label={LABELS.slopeLeftRight[stat.slope]}
-                    value={stat.rate}
-                    count={stat.attempts}
-                    color={colors.accent}
-                  />
-                ))}
-              {summary.slopeLeftRightStats.every((s) => s.attempts === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
+              <BarChart
+                data={chartData.slopeLeftRight}
+                color={colors.accent}
+                maxValue={100}
+                unit="%"
+                referenceThreshold={MIN_RELIABLE_PUTT_SAMPLE}
+              />
             </View>
 
-            {/* タッチ強度別カップイン率 */}
+            {/* 1stパット後の残距離と3パット */}
             <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
-              <Text className="text-lg font-semibold text-foreground mb-4">
-                タッチ強度別カップイン率（1stパット）
+              <Text className="text-lg font-semibold text-foreground">
+                3パット原因分析
               </Text>
-              {summary.touchStats
-                .filter((s) => s.attempts > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.touch}
-                    label={LABELS.puttStrength[stat.touch]}
-                    value={stat.rate}
-                    count={stat.attempts}
-                    color={colors.warning}
-                  />
-                ))}
-              {summary.touchStats.every((s) => s.attempts === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
-            </View>
-
-            {/* ミス方向別傾向 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
-              <Text className="text-lg font-semibold text-foreground mb-4">
-                ミス方向別傾向（全パット・ミスのみ）
+              <Text className="text-muted text-xs mt-1 mb-3">
+                1stパット後の残り距離別3パット率
               </Text>
-              {summary.missedDirectionStats
-                .filter((s) => s.count > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.direction}
-                    label={`方向 ${stat.direction}`}
-                    value={stat.rate}
-                    count={stat.count}
+              {summary.lagAnalysis.recordedHoles > 0 ? (
+                <>
+                  <View className="flex-row mb-3">
+                    <View className="flex-1">
+                      <Text className="text-muted text-xs">平均残り距離</Text>
+                      <Text className="text-foreground text-xl font-bold">
+                        {summary.lagAnalysis.averageLeaveMeters.toFixed(2)}m
+                      </Text>
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-muted text-xs">1m以上残した率</Text>
+                      <Text className="text-foreground text-xl font-bold">
+                        {summary.lagAnalysis.longLeaveRate.toFixed(1)}%
+                      </Text>
+                    </View>
+                  </View>
+                  <BarChart
+                    data={chartData.lag}
                     color={colors.error}
+                    maxValue={100}
+                    unit="%"
+                    referenceThreshold={MIN_RELIABLE_PUTT_SAMPLE}
                   />
-                ))}
-              {summary.missedDirectionStats.every((s) => s.count === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
+                </>
+              ) : (
+                <Text className="text-muted text-center py-4">
+                  2ndパットのDist(prev)を記録すると分析できます
+                </Text>
               )}
             </View>
           </SectionGroup>
@@ -256,40 +440,13 @@ export default function AnalyticsScreen() {
               <Text className="text-lg font-semibold text-foreground mb-4">
                 グリーンスピード別平均パット
               </Text>
-              {summary.greenSpeedStats
-                .filter((s) => s.rounds > 0)
-                .map((stat, _, arr) => {
-                  const maxValue = Math.max(...arr.map((s) => s.averagePutts), 0);
-                  const barWidth = maxValue > 0 ? (stat.averagePutts / maxValue) * 100 : 0;
-                  return (
-                    <View
-                      key={stat.speedRange}
-                      className="py-2 border-b border-border"
-                    >
-                      <View className="flex-row items-center justify-between mb-1">
-                        <Text className="text-foreground">{stat.speedRange}</Text>
-                        <View className="flex-row items-baseline">
-                          <Text className="text-xl font-bold text-foreground">
-                            {stat.averagePutts.toFixed(2)}
-                          </Text>
-                          <Text className="text-muted text-sm ml-1">/H</Text>
-                          <Text className="text-muted text-xs ml-2">
-                            ({stat.rounds}R)
-                          </Text>
-                        </View>
-                      </View>
-                      <View className="w-full h-1.5 bg-border rounded-full overflow-hidden">
-                        <View
-                          className="h-full bg-primary rounded-full"
-                          style={{ width: `${barWidth}%` }}
-                        />
-                      </View>
-                    </View>
-                  );
-                })}
-              {summary.greenSpeedStats.every((s) => s.rounds === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
+              <BarChart
+                data={chartData.greenSpeed}
+                color={colors.primary}
+                unit="/H"
+                decimals={2}
+                referenceThreshold={MIN_RELIABLE_ROUND_SAMPLE}
+              />
             </View>
 
             <MetadataSection title="芝の種類別平均パット" data={summary.grassTypeStats} />
@@ -297,47 +454,56 @@ export default function AnalyticsScreen() {
             <MetadataSection title="コース別平均パット" data={summary.courseStats} />
           </SectionGroup>
 
-          {/* ── グループC: メンタル・装備 ── */}
+          {/* ── グループC: 装備 ── */}
           <SectionGroup
-            title="メンタル・装備"
-            groupKey="mental"
-            expanded={expandedGroups.mental}
+            title="装備"
+            groupKey="equipment"
+            expanded={expandedGroups.equipment}
             onToggle={toggleGroup}
             sectionCount={2}
             colors={colors}
           >
-            {/* 心理状態別 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
-              <Text className="text-lg font-semibold text-foreground mb-4">
-                心理状態別カップイン率（1stパット）
-              </Text>
-              {summary.mentalStats
-                .filter((s) => s.attempts > 0)
-                .map((stat) => (
-                  <BarRow
-                    key={stat.state}
-                    label={LABELS.mentalState[stat.state]}
-                    value={stat.rate}
-                    count={stat.attempts}
-                    color={
-                      (stat.state === 'P' || stat.state === 1 || stat.state === 2)
-                        ? colors.success
-                        : (stat.state === 'N' || stat.state === 4 || stat.state === 5)
-                        ? colors.error
-                        : colors.warning
-                    }
-                  />
-                ))}
-              {summary.mentalStats.every((s) => s.attempts === 0) && (
-                <Text className="text-muted text-center py-4">データなし</Text>
-              )}
-            </View>
-
             <MetadataSection title="パター別平均パット" data={summary.putterStats} />
+            <AdjustedPutterSection data={summary.adjustedPutterStats} />
           </SectionGroup>
         </View>
       </ScrollView>
     </ScreenContainer>
+  );
+}
+
+function AdjustedPutterSection({
+  data,
+}: {
+  data: import("@/lib/types").AdjustedPutterStatsItem[];
+}) {
+  return (
+    <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+      <Text className="text-lg font-semibold text-foreground">条件補正パター比較</Text>
+      <Text className="text-muted text-xs mt-1 mb-3">
+        距離・傾斜・コース難易度を個人データ内で補正。低いほど良い
+      </Text>
+      {data.length > 0 ? data.map((stat, index) => (
+        <View key={stat.putterName} className="py-3 border-t border-border">
+          <View className="flex-row justify-between items-center">
+            <Text className="text-foreground font-semibold flex-1" numberOfLines={1}>
+              {index + 1}. {stat.putterName}
+            </Text>
+            <Text className="text-primary text-xl font-bold">
+              {stat.adjustedAveragePutts.toFixed(2)}/H
+            </Text>
+          </View>
+          <Text className="text-muted text-xs mt-1">
+            実測 {stat.rawAveragePutts.toFixed(2)}/H ・ 個人基準比
+            {stat.versusPersonalBaseline > 0 ? "+" : ""}
+            {stat.versusPersonalBaseline.toFixed(2)} ・ n={stat.holes}H
+            {stat.holes < 18 ? "・参考" : ""}
+          </Text>
+        </View>
+      )) : (
+        <Text className="text-muted text-center py-4">データなし</Text>
+      )}
+    </View>
   );
 }
 
@@ -477,7 +643,7 @@ function MetadataSection({
                   </Text>
                   <Text className="text-muted text-sm ml-1">/H</Text>
                   <Text className="text-muted text-xs ml-2">
-                    ({stat.rounds}R)
+                    ({stat.rounds}R{stat.rounds < MIN_RELIABLE_ROUND_SAMPLE ? "・参考" : ""})
                   </Text>
                 </View>
               </View>
@@ -493,42 +659,6 @@ function MetadataSection({
       ) : (
         <Text className="text-muted text-center py-4">データなし</Text>
       )}
-    </View>
-  );
-}
-
-function BarRow({
-  label,
-  value,
-  count,
-  color,
-}: {
-  label: string;
-  value: number;
-  count: number;
-  color: string;
-}) {
-  const screenWidth = Dimensions.get("window").width;
-  const maxBarWidth = screenWidth - 180;
-  const barWidth = Math.max((value / 100) * maxBarWidth, 4);
-
-  return (
-    <View className="flex-row items-center py-2 border-b border-border">
-      <Text className="text-foreground w-24">{label}</Text>
-      <View className="flex-1 flex-row items-center">
-        <View
-          style={{
-            width: barWidth,
-            height: 20,
-            backgroundColor: color,
-            borderRadius: 4,
-          }}
-        />
-        <Text className="text-foreground font-semibold ml-2">
-          {formatPercentage(value)}
-        </Text>
-      </View>
-      <Text className="text-muted text-xs w-12 text-right">n={count}</Text>
     </View>
   );
 }

@@ -3,6 +3,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import { golfRouter } from "./golfRouter";
+import { normalizeOcrHole } from "../lib/ocr-utils";
 
 const OCR_USER_TEXT = "このスコアカード画像(v2)を読み取ってJSON形式で返してください。\n注意点:\n- 手書きで記入されていない枠は必ずnullにすること（印刷文字のみの枠は空欄扱い）\n- Length(m)欄の手書き数字を必ず確認すること\n- 選択肢の判定: ラベルは枠の上に印刷されている。ユーザーが印（✓・塗りつぶし・丸など）を付けた枠の位置（左から何番目か）で値を決めること";
 
@@ -175,7 +176,8 @@ export const appRouter = router({
 
         try {
           const parsed = JSON.parse(content);
-          return { success: true as const, data: parsed };
+          // LLMの範囲外値・不正な列挙値・putts欠落を保存前に正規化する
+          return { success: true as const, data: normalizeOcrHole(parsed) };
         } catch {
           return { success: false as const, data: null, rawContent: content };
         }

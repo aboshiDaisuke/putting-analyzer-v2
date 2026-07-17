@@ -15,6 +15,13 @@
       "when": 1741737600000,
       "tag": "0001_rename_length_yards_to_meters",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784252918204,
+      "tag": "0002_tiresome_red_ghost",
+      "breakpoints": true
     }
   ]
 }

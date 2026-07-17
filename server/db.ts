@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -280,6 +280,52 @@ export async function getRounds(userId: number) {
   if (!db) return [];
 
   return db.select().from(rounds).where(eq(rounds.userId, userId));
+}
+
+/**
+ * Returns all of a user's rounds with their holes and putts hydrated.
+ * Uses 3 batched queries (rounds, holes, putts) to avoid N+1. Intended for
+ * the analytics screen, where per-hole/per-putt data is required.
+ */
+export async function getRoundsWithHoles(userId: number, fromDate?: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const roundRows = await db
+    .select()
+    .from(rounds)
+    .where(
+      fromDate
+        ? and(eq(rounds.userId, userId), gte(rounds.date, fromDate))
+        : eq(rounds.userId, userId),
+    );
+  if (roundRows.length === 0) return [];
+
+  const roundIds = roundRows.map((r) => r.id);
+  const holeRows = await db.select().from(holes).where(inArray(holes.roundId, roundIds));
+
+  const holeIds = holeRows.map((h) => h.id);
+  const puttRows =
+    holeIds.length > 0
+      ? await db.select().from(putts).where(inArray(putts.holeId, holeIds))
+      : [];
+
+  const puttsByHole = new Map<number, typeof puttRows>();
+  for (const p of puttRows) {
+    const arr = puttsByHole.get(p.holeId);
+    if (arr) arr.push(p);
+    else puttsByHole.set(p.holeId, [p]);
+  }
+
+  const holesByRound = new Map<number, Array<(typeof holeRows)[number] & { putts: typeof puttRows }>>();
+  for (const h of holeRows) {
+    const withPutts = { ...h, putts: puttsByHole.get(h.id) ?? [] };
+    const arr = holesByRound.get(h.roundId);
+    if (arr) arr.push(withPutts);
+    else holesByRound.set(h.roundId, [withPutts]);
+  }
+
+  return roundRows.map((r) => ({ ...r, holes: holesByRound.get(r.id) ?? [] }));
 }
 
 export async function getRound(id: number, userId: number) {

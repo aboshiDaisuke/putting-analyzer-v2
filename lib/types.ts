@@ -91,15 +91,6 @@ export type SlopeUpDown = 'flat' | 'uphill' | 'downhill' | 'up_down' | 'down_up'
 // ライン（左右）- カードの Line(L/R): St, L, R, LR, RL に対応
 export type SlopeLeftRight = 'straight' | 'left' | 'right' | 'left_right' | 'right_left';
 
-// 心理状態 - カードの Mental(P/N): P, 1, 2, 3, 4, 5, N に対応
-export type MentalState = 'P' | 1 | 2 | 3 | 4 | 5 | 'N';
-
-// タッチ強度（1-5: 弱 to 強）- カードの Touch(弱1-5強) に対応
-export type PuttStrength = 1 | 2 | 3 | 4 | 5;
-
-// ミス方向（1-5）- カードの Missed Direction に対応
-export type MissedDirection = 1 | 2 | 3 | 4 | 5;
-
 // パットデータ - カードの各パットセクションに完全対応
 export interface PuttData {
   strokeNumber: 1 | 2 | 3; // 1st/2nd/3rd Putt
@@ -109,19 +100,13 @@ export interface PuttData {
   lengthSteps: number | null; // カードの Length st - 歩数
   lengthMeters: number | null; // カードの Length m - メートル直入力
   distanceMeters: number; // 計算された距離（メートル）= 歩数 × 歩幅
-  missedDirection: MissedDirection | null; // カードの Missed Direction 1-5
-  touch: PuttStrength | null; // カードの Touch(弱1-5強)
   lineUD: SlopeUpDown; // カードの Line(U/D): F, U, D, UD, DU
   lineLR: SlopeLeftRight; // カードの Line(L/R): St, L, R, LR, RL
-  mental: MentalState | null; // カードの Mental(P/N): P, 1, 2, 3, 4, 5, N（未記入時はnull）
 }
 
 // ホールデータ
 export interface HoleData {
   holeNumber: number; // 1-18
-  // NOTE: scoreResult は現状DBに保存されていない（api-golf.ts の dbHoleToClient で常に "par"）。
-  // 再読込するとユーザー入力値もOCR取得値も par に戻るため、ラウンド詳細のバッジ表示専用。
-  // 統計にも未使用。将来 scoreResult ベースの集計を追加する場合は DB スキーマにカラム追加が必要。
   scoreResult: ScoreResult;
   totalPutts: number;
   putts: PuttData[];
@@ -137,15 +122,54 @@ export interface AnalyticsSummary {
   distanceStats: DistanceStats[];
   slopeStats: SlopeStats[];
   greenSpeedStats: GreenSpeedStats[];
-  mentalStats: MentalStatsItem[];
-  // 新規7項目
-  touchStats: TouchStatsItem[];
   slopeLeftRightStats: SlopeLeftRightStatsItem[];
-  missedDirectionStats: MissedDirectionStatsItem[];
+  trend: RoundTrendItem[]; // ラウンドごとの推移（日付昇順）
+  lagAnalysis: LagAnalysis;
+  personalStrokesGained: PersonalStrokesGainedSummary;
   putterStats: MetadataAvgPuttsItem[];
+  adjustedPutterStats: AdjustedPutterStatsItem[];
   grassTypeStats: MetadataAvgPuttsItem[];
   weatherStats: MetadataAvgPuttsItem[];
   courseStats: MetadataAvgPuttsItem[];
+}
+
+export interface PersonalStrokesGainedRound {
+  roundId: string;
+  label: string;
+  holes: number;
+  value: number;
+}
+
+export interface PersonalStrokesGainedSummary {
+  baselineHoles: number;
+  evaluatedHoles: number;
+  total: number;
+  perHole: number;
+  rounds: PersonalStrokesGainedRound[];
+}
+
+export interface AdjustedPutterStatsItem {
+  putterName: string;
+  holes: number;
+  rounds: number;
+  rawAveragePutts: number;
+  adjustedAveragePutts: number;
+  versusPersonalBaseline: number;
+}
+
+export interface LagDistanceBucket {
+  range: string;
+  attempts: number;
+  threePutts: number;
+  threePuttRate: number;
+}
+
+export interface LagAnalysis {
+  recordedHoles: number;
+  averageLeaveMeters: number;
+  threePuttAverageLeaveMeters: number;
+  longLeaveRate: number;
+  buckets: LagDistanceBucket[];
 }
 
 export interface DistanceStats {
@@ -168,21 +192,6 @@ export interface GreenSpeedStats {
   rounds: number;
 }
 
-export interface MentalStatsItem {
-  state: MentalState;
-  attempts: number;
-  cupIns: number;
-  rate: number;
-}
-
-// タッチ強度別統計
-export interface TouchStatsItem {
-  touch: PuttStrength;
-  attempts: number;
-  cupIns: number;
-  rate: number;
-}
-
 // 左右傾斜別統計
 export interface SlopeLeftRightStatsItem {
   slope: SlopeLeftRight;
@@ -191,18 +200,27 @@ export interface SlopeLeftRightStatsItem {
   rate: number;
 }
 
-// ミス方向別統計（cupIn=false の全パット対象）
-export interface MissedDirectionStatsItem {
-  direction: MissedDirection;
-  count: number;
-  rate: number; // 全ミスパット中の割合
-}
-
 // メタデータ別平均パット統計（汎用）
 export interface MetadataAvgPuttsItem {
   label: string;
   averagePutts: number;
   rounds: number;
+}
+
+// ラウンドごとの推移（時系列グラフ用、日付昇順）
+export interface RoundTrendItem {
+  label: string; // 短縮表示 "M/D"
+  avgPutts: number; // 平均パット/ホール
+  onePuttRate: number; // 1パット率(%)
+}
+
+export interface PracticeInsight {
+  id: string;
+  title: string;
+  summary: string;
+  practice: string;
+  sampleSize: number;
+  priority: number;
 }
 
 // ローカルストレージのキー
@@ -301,29 +319,6 @@ export const LABELS = {
     left_right: 'LR',
     right_left: 'RL',
   },
-  mentalState: {
-    P: 'P (+)',
-    1: '1',
-    2: '2',
-    3: '3',
-    4: '4',
-    5: '5',
-    N: 'N (-)',
-  },
-  puttStrength: {
-    1: '1 弱',
-    2: '2',
-    3: '3',
-    4: '4',
-    5: '5 強',
-  },
-  missedDirection: {
-    1: '1',
-    2: '2',
-    3: '3',
-    4: '4',
-    5: '5',
-  },
   putterRanking: {
     ace: 'Ace',
     '2nd': '2nd',
@@ -356,15 +351,6 @@ export const CARD_TO_APP = {
     LR: 'left_right' as SlopeLeftRight,
     RL: 'right_left' as SlopeLeftRight,
   },
-  mental: {
-    P: 'P' as MentalState,
-    1: 1 as MentalState,
-    2: 2 as MentalState,
-    3: 3 as MentalState,
-    4: 4 as MentalState,
-    5: 5 as MentalState,
-    N: 'N' as MentalState,
-  },
 };
 
 // アプリ内部値 → OCRカード表記のマッピング（逆変換）
@@ -390,10 +376,7 @@ export function createDefaultPutt(strokeNumber: 1 | 2 | 3): PuttData {
     lengthSteps: null,
     lengthMeters: null,
     distanceMeters: 0,
-    missedDirection: null,
-    touch: null,
     lineUD: 'flat',
     lineLR: 'straight',
-    mental: null,
   };
 }

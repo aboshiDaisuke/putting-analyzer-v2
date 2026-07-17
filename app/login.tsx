@@ -10,9 +10,12 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, { Circle } from "react-native-svg";
 import { supabase } from "@/lib/supabase";
 import { useColors } from "@/hooks/use-colors";
 import { ErrorBanner } from "@/components/ui/error-banner";
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { shadowLg, shadowPrimary } from "@/lib/card-shadow";
 
 type Mode = "signin" | "signup";
 
@@ -92,30 +95,52 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {/* Logo / Title */}
-          <View style={{ alignItems: "center", marginBottom: 40 }}>
-            <Text style={{ fontSize: 40, marginBottom: 12 }}>⛳️</Text>
-            <Text
-              style={{ fontSize: 28, fontWeight: "bold", color: colors.tint, marginBottom: 4 }}
+          <View style={{ alignItems: "center", marginBottom: 36 }}>
+            <View
+              style={[
+                {
+                  width: 84,
+                  height: 84,
+                  borderRadius: 26,
+                  backgroundColor: colors.primary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: 18,
+                  overflow: "hidden",
+                },
+                shadowPrimary,
+              ]}
             >
+              {/* グリーンの等高線モチーフ */}
+              <View style={{ position: "absolute", opacity: 0.6 }}>
+                <Svg width={84} height={84}>
+                  <Circle cx={62} cy={24} r={30} stroke="rgba(255,255,255,0.12)" strokeWidth={1.5} fill="none" />
+                  <Circle cx={62} cy={24} r={18} stroke="rgba(255,255,255,0.1)" strokeWidth={1.5} fill="none" />
+                </Svg>
+              </View>
+              <IconSymbol name="flag.fill" size={38} color="#FFFFFF" />
+              <View style={{ position: "absolute", bottom: 16, width: 30, height: 3, borderRadius: 2, backgroundColor: colors.accent }} />
+            </View>
+            <Text style={{ fontSize: 27, fontWeight: "800", color: colors.tint, letterSpacing: -0.3 }}>
               パッティング分析
             </Text>
-            <Text style={{ fontSize: 14, color: colors.muted }}>
+            <Text style={{ fontSize: 14, color: colors.muted, marginTop: 4 }}>
               あなたのパッティングを記録・分析
             </Text>
           </View>
 
           {/* Card */}
           <View
-            style={{
-              backgroundColor: colors.surface,
-              borderRadius: 16,
-              padding: 24,
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.08,
-              shadowRadius: 8,
-              elevation: 3,
-            }}
+            style={[
+              {
+                backgroundColor: colors.surface,
+                borderRadius: 24,
+                padding: 24,
+                borderWidth: 1,
+                borderColor: colors.border,
+              },
+              shadowLg,
+            ]}
           >
             {/* Mode toggle */}
             <View
@@ -221,14 +246,17 @@ export default function LoginScreen() {
             <TouchableOpacity
               onPress={handleSubmit}
               disabled={loading}
-              style={{
-                backgroundColor: colors.tint,
-                borderRadius: 12,
-                paddingVertical: 14,
-                alignItems: "center",
-                marginBottom: 16,
-                opacity: loading ? 0.7 : 1,
-              }}
+              style={[
+                {
+                  backgroundColor: colors.tint,
+                  borderRadius: 14,
+                  paddingVertical: 15,
+                  alignItems: "center",
+                  marginBottom: 16,
+                  opacity: loading ? 0.7 : 1,
+                },
+                shadowPrimary,
+              ]}
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
@@ -265,7 +293,20 @@ export default function LoginScreen() {
                 opacity: loading ? 0.7 : 1,
               }}
             >
-              <Text style={{ fontSize: 18 }}>G</Text>
+              <View
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 11,
+                  backgroundColor: "#FFFFFF",
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: "700", color: "#4285F4" }}>G</Text>
+              </View>
               <Text style={{ color: colors.text, fontWeight: "600", fontSize: 15 }}>
                 Googleでログイン
               </Text>

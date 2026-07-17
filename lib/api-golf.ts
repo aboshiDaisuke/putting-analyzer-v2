@@ -158,6 +158,7 @@ interface DbHole {
   id: number;
   roundId: number;
   holeNumber: number;
+  scoreResult: string | null;
   totalPutts: number | null;
   createdAt: string | Date;
   updatedAt: string | Date;
@@ -174,11 +175,8 @@ interface DbPutt {
   lengthSteps: number | null;
   lengthMeters: number | null;
   distanceMeters: number | null;
-  missedDirection: number | null;
-  touch: number | null;
   lineUD: string | null;
   lineLR: string | null;
-  mental: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
@@ -235,27 +233,15 @@ function dbPuttToClient(db: DbPutt): PuttData {
     lengthSteps: db.lengthSteps,
     lengthMeters: db.lengthMeters,
     distanceMeters: db.distanceMeters ?? 0,
-    missedDirection: (db.missedDirection as PuttData["missedDirection"]) ?? null,
-    touch: (db.touch as PuttData["touch"]) ?? null,
     lineUD: (db.lineUD as PuttData["lineUD"]) ?? "flat",
     lineLR: (db.lineLR as PuttData["lineLR"]) ?? "straight",
-    mental: parseMentalState(db.mental),
   };
-}
-
-function parseMentalState(v: string | null | undefined): PuttData["mental"] {
-  if (v === null || v === undefined) return null;
-  if (v === "P") return "P";
-  if (v === "N") return "N";
-  const n = parseInt(v, 10);
-  if (n >= 1 && n <= 5) return n as 1 | 2 | 3 | 4 | 5;
-  return null;
 }
 
 function dbHoleToClient(db: DbHole): HoleData {
   return {
     holeNumber: db.holeNumber,
-    scoreResult: "par", // scoreResult is not stored in DB; default to "par"
+    scoreResult: (db.scoreResult as HoleData["scoreResult"]) ?? "par",
     totalPutts: db.totalPutts ?? 0,
     putts: (db.putts ?? []).map(dbPuttToClient),
   };
@@ -477,7 +463,7 @@ export async function getRounds(): Promise<Round[]> {
   try {
     const list = await trpcQuery<DbRound[]>("golf.rounds.list");
     if (!list || list.length === 0) return [];
-    // The list endpoint does NOT include holes; add empty holes array
+    // The list endpoint does NOT include holes; dbRoundToClient pads to 18 empty holes.
     const rounds = list.map((r) => dbRoundToClient(r));
     // Sort descending by date (same as original AsyncStorage implementation)
     return rounds.sort(
@@ -485,6 +471,27 @@ export async function getRounds(): Promise<Round[]> {
     );
   } catch (error) {
     console.error("[api-golf] getRounds error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Like getRounds, but with holes and putts hydrated. Use for analytics, where
+ * per-hole/per-putt stats (1-putt rate, distance/slope breakdowns) are needed.
+ */
+export async function getRoundsWithHoles(fromDate?: string): Promise<Round[]> {
+  try {
+    const list = await trpcQuery<(DbRound & { holes: DbHole[] })[]>(
+      "golf.rounds.listWithHoles",
+      { fromDate },
+    );
+    if (!list || list.length === 0) return [];
+    const rounds = list.map((r) => dbRoundToClient(r));
+    return rounds.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+  } catch (error) {
+    console.error("[api-golf] getRoundsWithHoles error:", error);
     throw error;
   }
 }
@@ -674,6 +681,7 @@ interface SaveHolesResult {
 export async function saveHolesForRound(
   roundId: string,
   holes: HoleData[],
+  roundTotalPutts?: number,
 ): Promise<SaveHolesResult> {
   const numRoundId = toNumericId(roundId);
   if (isNaN(numRoundId)) throw new Error(`Invalid roundId: ${roundId}`);
@@ -681,6 +689,7 @@ export async function saveHolesForRound(
   // Map client HoleData → the shape expected by holes.upsertHoles
   const holesInput = holes.map((hole) => ({
     holeNumber: hole.holeNumber,
+    scoreResult: hole.scoreResult,
     totalPutts: hole.totalPutts,
     putts: hole.putts.map((putt) => ({
       strokeNumber: putt.strokeNumber,
@@ -690,13 +699,8 @@ export async function saveHolesForRound(
       lengthSteps: putt.lengthSteps,
       lengthMeters: putt.lengthMeters,
       distanceMeters: putt.distanceMeters,
-      missedDirection: putt.missedDirection,
-      touch: putt.touch,
       lineUD: putt.lineUD,
       lineLR: putt.lineLR,
-      mental: putt.mental !== null && putt.mental !== undefined
-        ? String(putt.mental)
-        : null,
     })),
   }));
 
@@ -708,6 +712,8 @@ export async function saveHolesForRound(
   const result = await trpcMutate<UpsertHolesResult>("golf.holes.upsertHoles", {
     roundId: numRoundId,
     holes: holesInput,
+    // 指定時はラウンドの totalPutts もサーバー側で同時更新（部分保存の回避）
+    ...(roundTotalPutts !== undefined ? { roundTotalPutts } : {}),
   });
 
   // Map DB holes back to client HoleData, preserving scoreResult from input

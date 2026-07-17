@@ -18,6 +18,7 @@ import {
   getPuttsByHoles,
   getRound,
   getRounds,
+  getRoundsWithHoles,
   getUserProfile,
   updateCourse,
   updatePutter,
@@ -84,17 +85,15 @@ const puttInputSchema = z.object({
   lengthSteps: z.number().int().nullable().optional(),
   lengthMeters: z.number().nullable().optional(),
   distanceMeters: z.number().nullable().optional(),
-  missedDirection: z.number().int().min(1).max(5).nullable().optional(),
-  touch: z.number().int().min(1).max(5).nullable().optional(),
   lineUD: slopeUpDownSchema.nullable().optional(),
   lineLR: slopeLeftRightSchema.nullable().optional(),
-  mental: z.string().max(4).nullable().optional(),
 });
 
 // ─── Hole input schema (used in upsertHoles) ─────────────────────────────────
 
 const holeInputSchema = z.object({
   holeNumber: z.number().int().min(1).max(18),
+  scoreResult: scoreResultSchema.default("par"),
   totalPutts: z.number().int().min(0).optional(),
   putts: z.array(puttInputSchema).max(3).optional(),
 });
@@ -259,6 +258,13 @@ export const roundsRouter = router({
     return getRounds(ctx.user.id);
   }),
 
+  /** Like list, but with all holes and putts hydrated (for analytics). */
+  listWithHoles: protectedProcedure
+    .input(z.object({ fromDate: z.string().date().optional() }))
+    .query(async ({ ctx, input }) => {
+      return getRoundsWithHoles(ctx.user.id, input.fromDate);
+    }),
+
   /** Returns the round with all nested holes and putts. */
   get: protectedProcedure
     .input(z.object({ id: z.number().int() }))
@@ -384,6 +390,9 @@ export const holesRouter = router({
       z.object({
         roundId: z.number().int(),
         holes: z.array(holeInputSchema).max(18),
+        // ラウンド合計パット数。指定時はホール保存と同じミューテーション内で
+        // 更新し、「ホールは保存されたが合計は古いまま」という部分保存を防ぐ。
+        roundTotalPutts: z.number().int().min(0).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -395,9 +404,10 @@ export const holesRouter = router({
 
       const savedHoles = await Promise.all(
         input.holes.map(async (holeInput) => {
-          const { holeNumber, totalPutts, putts: puttsInput } = holeInput;
+          const { holeNumber, scoreResult, totalPutts, putts: puttsInput } = holeInput;
 
           const hole = await upsertHole(input.roundId, holeNumber, {
+            scoreResult,
             totalPutts: totalPutts ?? 0,
           });
 
@@ -409,6 +419,13 @@ export const holesRouter = router({
           return { ...hole, putts: savedPutts };
         }),
       );
+
+      // ラウンドの totalPutts を同一リクエストで更新（部分保存の回避）。
+      if (input.roundTotalPutts !== undefined) {
+        await updateRound(input.roundId, ctx.user.id, {
+          totalPutts: input.roundTotalPutts,
+        });
+      }
 
       return { roundId: input.roundId, holes: savedHoles };
     }),

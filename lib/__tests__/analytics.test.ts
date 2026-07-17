@@ -4,6 +4,14 @@ import {
   formatDate,
   getDistanceRange,
   calculateStats,
+  calculateAnalyticsSummary,
+  calculateRoundTrend,
+  getPeriodCutoffDate,
+  generatePracticeInsights,
+  isReferenceSample,
+  calculateLagAnalysis,
+  calculateAdjustedPutterStats,
+  calculatePersonalStrokesGained,
   analyzeByDistance,
   analyzeBySlope,
 } from "../analytics";
@@ -18,11 +26,8 @@ const createPutt = (overrides: Partial<PuttData> = {}): PuttData => ({
   lengthSteps: null,
   lengthMeters: null,
   distanceMeters: 0,
-  missedDirection: null,
-  touch: null,
   lineUD: "flat",
   lineLR: "straight",
-  mental: 3,
   ...overrides,
 });
 
@@ -57,6 +62,142 @@ const createRound = (
 });
 
 describe("Analytics Functions", () => {
+  describe("hydrated round analytics", () => {
+    it("uses only holes with entered putts for 9-hole summary metrics", () => {
+      const holes = Array.from({ length: 18 }, (_, i) => ({
+        totalPutts: i < 3 ? 1 : i < 9 ? 2 : 0,
+      }));
+      const round = createRound(999, holes);
+
+      const summary = calculateAnalyticsSummary([round]);
+
+      expect(summary.averagePutts).toBeCloseTo(15 / 9);
+      expect(summary.onePuttRate).toBeCloseTo((3 / 9) * 100);
+      expect(summary.threePuttRate).toBe(0);
+      expect(summary.greenSpeedStats.find((s) => s.rounds > 0)?.averagePutts)
+        .toBeCloseTo(15 / 9);
+      expect(summary.putterStats[0].averagePutts).toBeCloseTo(15 / 9);
+    });
+
+    it("excludes empty rounds from trends and derives totals from played holes", () => {
+      const played = createRound(999, [
+        { totalPutts: 1 },
+        { totalPutts: 2 },
+        { totalPutts: 2 },
+      ]);
+      const empty = createRound(0, Array.from({ length: 18 }, () => ({ totalPutts: 0 })));
+      empty.id = "empty";
+      empty.date = "2024-01-16T09:00:00.000Z";
+
+      const trend = calculateRoundTrend([empty, played]);
+
+      expect(trend).toHaveLength(1);
+      expect(trend[0].avgPutts).toBeCloseTo(5 / 3);
+      expect(trend[0].onePuttRate).toBeCloseTo(100 / 3);
+    });
+
+    it("creates stable period cutoffs from an injected clock", () => {
+      const now = new Date(2026, 6, 17, 12);
+
+      expect(getPeriodCutoffDate("all", now)).toBeNull();
+      expect(getPeriodCutoffDate("month", now)).toEqual(new Date(2026, 5, 17));
+      expect(getPeriodCutoffDate("year", now)).toEqual(new Date(2025, 6, 17));
+    });
+
+    it("returns three prioritized issues with actionable practice menus", () => {
+      const round = createRound(12, [
+        { totalPutts: 3 },
+        { totalPutts: 3 },
+        { totalPutts: 2 },
+        { totalPutts: 2 },
+        { totalPutts: 1 },
+        { totalPutts: 1 },
+      ]);
+
+      const insights = generatePracticeInsights([round]);
+
+      expect(insights).toHaveLength(3);
+      expect(insights[0].priority).toBeGreaterThanOrEqual(insights[1].priority);
+      expect(insights.every((item) => item.practice.length > 0)).toBe(true);
+    });
+
+    it("marks samples below the configured minimum as reference values", () => {
+      expect(isReferenceSample(9, 10)).toBe(true);
+      expect(isReferenceSample(10, 10)).toBe(false);
+    });
+
+    it("analyzes three-putt risk from first-putt leave distance", () => {
+      const round = createRound(5, [
+        {
+          totalPutts: 3,
+          putts: [
+            createPutt({ strokeNumber: 1 }),
+            createPutt({ strokeNumber: 2, distPrev: 2 }),
+            createPutt({ strokeNumber: 3, cupIn: true }),
+          ],
+        },
+        {
+          totalPutts: 2,
+          putts: [
+            createPutt({ strokeNumber: 1 }),
+            createPutt({ strokeNumber: 2, distPrev: 1, cupIn: true }),
+          ],
+        },
+      ]);
+
+      const lag = calculateLagAnalysis([round]);
+
+      expect(lag.recordedHoles).toBe(2);
+      expect(lag.averageLeaveMeters).toBeCloseTo(1.3716);
+      expect(lag.buckets.find((bucket) => bucket.range === "1〜2m")?.threePuttRate).toBe(100);
+    });
+
+    it("produces condition-adjusted putter rankings", () => {
+      const shortPutt = createPutt({ distanceMeters: 1, lineUD: "flat", lineLR: "straight" });
+      const longPutt = createPutt({ distanceMeters: 8, lineUD: "uphill", lineLR: "left" });
+      const putterA = createRound(2, [{ totalPutts: 2, putts: [shortPutt] }]);
+      putterA.putterName = "Putter A";
+      putterA.courseName = "Easy";
+      const putterB = createRound(3, [{ totalPutts: 3, putts: [longPutt] }]);
+      putterB.id = "round-b";
+      putterB.putterName = "Putter B";
+      putterB.courseName = "Hard";
+
+      const stats = calculateAdjustedPutterStats([putterA, putterB]);
+      const a = stats.find((item) => item.putterName === "Putter A")!;
+      const b = stats.find((item) => item.putterName === "Putter B")!;
+
+      expect(stats).toHaveLength(2);
+      expect(Math.abs(a.adjustedAveragePutts - b.adjustedAveragePutts))
+        .toBeLessThan(Math.abs(a.rawAveragePutts - b.rawAveragePutts));
+    });
+
+    it("calculates leakage-free strokes gained against prior personal data", () => {
+      const makeRound = (id: string, date: string, putts: number) => {
+        const round = createRound(
+          putts * 10,
+          Array.from({ length: 10 }, () => ({
+            totalPutts: putts,
+            putts: [createPutt({ distanceMeters: 2 })],
+          })),
+        );
+        round.id = id;
+        round.date = date;
+        return round;
+      };
+      const baseline = makeRound("baseline", "2024-01-01", 2);
+      const improved = makeRound("improved", "2024-01-02", 1);
+      const declined = makeRound("declined", "2024-01-03", 3);
+
+      const result = calculatePersonalStrokesGained([declined, baseline, improved]);
+
+      expect(result.rounds).toHaveLength(2);
+      expect(result.rounds[0].roundId).toBe("improved");
+      expect(result.rounds[0].value).toBeGreaterThan(0);
+      expect(result.rounds[1].value).toBeLessThan(0);
+    });
+  });
+
   describe("calculateDistance", () => {
     it("should calculate distance from steps and stride length", () => {
       expect(calculateDistance(10, 0.7)).toBe(7);

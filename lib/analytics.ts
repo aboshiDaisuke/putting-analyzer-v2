@@ -6,16 +6,15 @@ import {
   DistanceStats,
   SlopeStats,
   GreenSpeedStats,
-  MentalStatsItem,
-  TouchStatsItem,
   SlopeLeftRightStatsItem,
-  MissedDirectionStatsItem,
   MetadataAvgPuttsItem,
+  RoundTrendItem,
+  PracticeInsight,
+  LagAnalysis,
+  AdjustedPutterStatsItem,
+  PersonalStrokesGainedSummary,
   SlopeUpDown,
   SlopeLeftRight,
-  MentalState,
-  PuttStrength,
-  MissedDirection,
   LABELS,
 } from './types';
 
@@ -38,6 +37,20 @@ const SPEED_RANGES = [
   { min: 10, max: 11, label: '10-11ft' },
   { min: 11, max: Infinity, label: '11ft+' },
 ];
+
+export type AnalyticsPeriod = 'week' | 'month' | 'year' | 'all';
+export const MIN_RELIABLE_PUTT_SAMPLE = 10;
+export const MIN_RELIABLE_ROUND_SAMPLE = 3;
+
+export function isReferenceSample(sampleSize: number, minimum: number): boolean {
+  return sampleSize < minimum;
+}
+
+// DB/API変換後のラウンドは未入力ホールも totalPutts=0 で保持するため、
+// 分析の分母には実際にパットが入力されたホールだけを使う。
+export function getPlayedHoles(round: Round): HoleData[] {
+  return round.holes.filter((hole) => hole.totalPutts > 0);
+}
 
 // 全パットデータを抽出
 export function extractAllPutts(rounds: Round[]): { putt: PuttData; round: Round; hole: HoleData }[] {
@@ -68,19 +81,23 @@ export function calculateBasicStats(rounds: Round[]): {
   averagePuttsPerHole: number;
 } {
   const totalRounds = rounds.length;
+  let playedRounds = 0;
   let totalHoles = 0;
   let totalPutts = 0;
   
   for (const round of rounds) {
-    totalHoles += round.holes.length;
-    totalPutts += round.totalPutts;
+    const played = getPlayedHoles(round);
+    if (played.length === 0) continue;
+    playedRounds++;
+    totalHoles += played.length;
+    totalPutts += played.reduce((sum, hole) => sum + hole.totalPutts, 0);
   }
   
   return {
     totalRounds,
     totalHoles,
     totalPutts,
-    averagePuttsPerRound: totalRounds > 0 ? totalPutts / totalRounds : 0,
+    averagePuttsPerRound: playedRounds > 0 ? totalPutts / playedRounds : 0,
     averagePuttsPerHole: totalHoles > 0 ? totalPutts / totalHoles : 0,
   };
 }
@@ -91,7 +108,7 @@ export function calculateOnePuttRate(rounds: Round[]): number {
   let totalHoles = 0;
   
   for (const round of rounds) {
-    for (const hole of round.holes) {
+    for (const hole of getPlayedHoles(round)) {
       totalHoles++;
       if (hole.totalPutts === 1) {
         onePuttHoles++;
@@ -108,7 +125,7 @@ export function calculateThreePuttRate(rounds: Round[]): number {
   let totalHoles = 0;
   
   for (const round of rounds) {
-    for (const hole of round.holes) {
+    for (const hole of getPlayedHoles(round)) {
       totalHoles++;
       if (hole.totalPutts >= 3) {
         threePuttHoles++;
@@ -171,52 +188,17 @@ export function calculateSlopeStats(rounds: Round[]): SlopeStats[] {
 export function calculateGreenSpeedStats(rounds: Round[]): GreenSpeedStats[] {
   return SPEED_RANGES.map(range => {
     const roundsInRange = rounds.filter(
-      r => r.stimpmeter >= range.min && r.stimpmeter < range.max
+      r => r.stimpmeter >= range.min && r.stimpmeter < range.max && getPlayedHoles(r).length > 0
     );
     
-    const totalPutts = roundsInRange.reduce((sum, r) => sum + r.totalPutts, 0);
-    const totalHoles = roundsInRange.reduce((sum, r) => sum + r.holes.length, 0);
+    const playedHoles = roundsInRange.flatMap(getPlayedHoles);
+    const totalPutts = playedHoles.reduce((sum, h) => sum + h.totalPutts, 0);
+    const totalHoles = playedHoles.length;
     
     return {
       speedRange: range.label,
       averagePutts: totalHoles > 0 ? totalPutts / totalHoles : 0,
       rounds: roundsInRange.length,
-    };
-  });
-}
-
-// 心理状態別統計
-export function calculateMentalStats(rounds: Round[]): MentalStatsItem[] {
-  const firstPutts = extractFirstPutts(rounds);
-  const states: MentalState[] = ['P', 1, 2, 3, 4, 5, 'N'];
-  
-  return states.map(state => {
-    const puttsWithState = firstPutts.filter(({ putt }) => putt.mental === state);
-    const cupIns = puttsWithState.filter(({ putt }) => putt.cupIn).length;
-    
-    return {
-      state,
-      attempts: puttsWithState.length,
-      cupIns,
-      rate: puttsWithState.length > 0 ? (cupIns / puttsWithState.length) * 100 : 0,
-    };
-  });
-}
-
-// タッチ強度別カップイン率（1stパット）
-export function calculateTouchStats(rounds: Round[]): TouchStatsItem[] {
-  const firstPutts = extractFirstPutts(rounds);
-  const touches: PuttStrength[] = [1, 2, 3, 4, 5];
-
-  return touches.map(touch => {
-    const puttsWithTouch = firstPutts.filter(({ putt }) => putt.touch === touch);
-    const cupIns = puttsWithTouch.filter(({ putt }) => putt.cupIn).length;
-
-    return {
-      touch,
-      attempts: puttsWithTouch.length,
-      cupIns,
-      rate: puttsWithTouch.length > 0 ? (cupIns / puttsWithTouch.length) * 100 : 0,
     };
   });
 }
@@ -239,24 +221,6 @@ export function calculateSlopeLeftRightStats(rounds: Round[]): SlopeLeftRightSta
   });
 }
 
-// ミス方向別傾向（cupIn=false の全パット対象）
-export function calculateMissedDirectionStats(rounds: Round[]): MissedDirectionStatsItem[] {
-  const allPutts = extractAllPutts(rounds);
-  const missedPutts = allPutts.filter(({ putt }) => !putt.cupIn && putt.missedDirection != null);
-  const totalMissed = missedPutts.length;
-  const directions: MissedDirection[] = [1, 2, 3, 4, 5];
-
-  return directions.map(direction => {
-    const count = missedPutts.filter(({ putt }) => putt.missedDirection === direction).length;
-
-    return {
-      direction,
-      count,
-      rate: totalMissed > 0 ? (count / totalMissed) * 100 : 0,
-    };
-  });
-}
-
 // メタデータ別平均パット/H の汎用ヘルパー
 function calculateMetadataAvgPutts(
   rounds: Round[],
@@ -268,9 +232,12 @@ function calculateMetadataAvgPutts(
     const key = groupBy(round);
     if (!key) continue;
 
+    const played = getPlayedHoles(round);
+    if (played.length === 0) continue;
+
     const existing = groups.get(key) ?? { totalPutts: 0, totalHoles: 0, rounds: 0 };
-    existing.totalPutts += round.totalPutts;
-    existing.totalHoles += round.holes.length;
+    existing.totalPutts += played.reduce((sum, hole) => sum + hole.totalPutts, 0);
+    existing.totalHoles += played.length;
     existing.rounds += 1;
     groups.set(key, existing);
   }
@@ -293,6 +260,91 @@ export function calculatePutterStats(rounds: Round[]): MetadataAvgPuttsItem[] {
   return calculateMetadataAvgPutts(rounds, r => r.putterName || '不明');
 }
 
+function distanceCondition(distanceMeters: number): string {
+  return DISTANCE_RANGES.find(
+    (range) => distanceMeters >= range.min && distanceMeters < range.max,
+  )?.label ?? '距離不明';
+}
+
+// 距離・傾斜・コースごとの難易度を個人データ内で推定し、各ホールの期待値との差を
+// パター別に集計する。少数条件は個人全体平均へ縮約して過補正を防ぐ。
+export function calculateAdjustedPutterStats(rounds: Round[]): AdjustedPutterStatsItem[] {
+  const observations = rounds.flatMap((round) =>
+    getPlayedHoles(round).map((hole) => {
+      const firstPutt = hole.putts.find((putt) => putt.strokeNumber === 1);
+      return {
+        putterName: round.putterName || '不明',
+        roundId: round.id,
+        totalPutts: hole.totalPutts,
+        conditions: [
+          `distance:${distanceCondition(firstPutt?.distanceMeters ?? 0)}`,
+          `ud:${firstPutt?.lineUD ?? 'unknown'}`,
+          `lr:${firstPutt?.lineLR ?? 'unknown'}`,
+          `course:${round.courseName || '不明'}`,
+        ],
+      };
+    }),
+  );
+  if (observations.length === 0) return [];
+
+  const globalAverage = observations.reduce((sum, item) => sum + item.totalPutts, 0)
+    / observations.length;
+  const conditionTotals = new Map<string, { total: number; count: number }>();
+  for (const item of observations) {
+    for (const condition of item.conditions) {
+      const current = conditionTotals.get(condition) ?? { total: 0, count: 0 };
+      current.total += item.totalPutts;
+      current.count++;
+      conditionTotals.set(condition, current);
+    }
+  }
+
+  const priorHoles = 5;
+  const expectedFor = (conditions: string[]) => {
+    const adjustedConditions = conditions.map((condition) => {
+      const stats = conditionTotals.get(condition);
+      if (!stats) return globalAverage;
+      return (stats.total + globalAverage * priorHoles) / (stats.count + priorHoles);
+    });
+    return adjustedConditions.reduce((sum, value) => sum + value, 0)
+      / adjustedConditions.length;
+  };
+
+  const groups = new Map<string, {
+    rawTotal: number;
+    residualTotal: number;
+    holes: number;
+    roundIds: Set<string>;
+  }>();
+  for (const item of observations) {
+    const group = groups.get(item.putterName) ?? {
+      rawTotal: 0,
+      residualTotal: 0,
+      holes: 0,
+      roundIds: new Set<string>(),
+    };
+    group.rawTotal += item.totalPutts;
+    group.residualTotal += item.totalPutts - expectedFor(item.conditions);
+    group.holes++;
+    group.roundIds.add(item.roundId);
+    groups.set(item.putterName, group);
+  }
+
+  return [...groups.entries()]
+    .map(([putterName, data]) => {
+      const adjustedAveragePutts = globalAverage + data.residualTotal / data.holes;
+      return {
+        putterName,
+        holes: data.holes,
+        rounds: data.roundIds.size,
+        rawAveragePutts: data.rawTotal / data.holes,
+        adjustedAveragePutts,
+        versusPersonalBaseline: adjustedAveragePutts - globalAverage,
+      };
+    })
+    .sort((a, b) => a.adjustedAveragePutts - b.adjustedAveragePutts);
+}
+
 // 芝の種類別平均パット/H
 export function calculateGrassTypeStats(rounds: Round[]): MetadataAvgPuttsItem[] {
   return calculateMetadataAvgPutts(rounds, r => LABELS.grassType[r.grassType] || r.grassType);
@@ -308,6 +360,218 @@ export function calculateCourseStats(rounds: Round[]): MetadataAvgPuttsItem[] {
   return calculateMetadataAvgPutts(rounds, r => r.courseName || '不明');
 }
 
+// ラウンドごとの推移（日付昇順）。時系列グラフ用。
+export function calculateRoundTrend(rounds: Round[]): RoundTrendItem[] {
+  return [...rounds]
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .flatMap((round) => {
+      const played = getPlayedHoles(round);
+      const holeCount = played.length;
+      if (holeCount === 0) return [];
+
+      const totalPutts = played.reduce((sum, hole) => sum + hole.totalPutts, 0);
+      const onePuttHoles = played.filter((h) => h.totalPutts === 1).length;
+      const d = new Date(round.date);
+      return [{
+        label: `${d.getMonth() + 1}/${d.getDate()}`,
+        avgPutts: totalPutts / holeCount,
+        onePuttRate: (onePuttHoles / holeCount) * 100,
+      }];
+    });
+}
+
+// 2ndパットの distPrev は1stパット後の残り距離（yd）。これを使って
+// ロングパットの寄せ距離と3パット発生率の関係を分析する。
+export function calculateLagAnalysis(rounds: Round[]): LagAnalysis {
+  const outcomes = rounds.flatMap((round) =>
+    getPlayedHoles(round).flatMap((hole) => {
+      const secondPutt = hole.putts.find((putt) => putt.strokeNumber === 2);
+      if (!secondPutt?.distPrev || secondPutt.distPrev <= 0) return [];
+      return [{
+        leaveMeters: secondPutt.distPrev * 0.9144,
+        threePutt: hole.totalPutts >= 3,
+      }];
+    }),
+  );
+
+  const ranges = [
+    { min: 0, max: 0.5, label: "〜0.5m" },
+    { min: 0.5, max: 1, label: "0.5〜1m" },
+    { min: 1, max: 2, label: "1〜2m" },
+    { min: 2, max: Infinity, label: "2m〜" },
+  ];
+  const threePutts = outcomes.filter((outcome) => outcome.threePutt);
+  const longLeaves = outcomes.filter((outcome) => outcome.leaveMeters >= 1);
+
+  return {
+    recordedHoles: outcomes.length,
+    averageLeaveMeters: outcomes.length > 0
+      ? outcomes.reduce((sum, outcome) => sum + outcome.leaveMeters, 0) / outcomes.length
+      : 0,
+    threePuttAverageLeaveMeters: threePutts.length > 0
+      ? threePutts.reduce((sum, outcome) => sum + outcome.leaveMeters, 0) / threePutts.length
+      : 0,
+    longLeaveRate: outcomes.length > 0 ? (longLeaves.length / outcomes.length) * 100 : 0,
+    buckets: ranges.map((range) => {
+      const matches = outcomes.filter(
+        (outcome) => outcome.leaveMeters >= range.min && outcome.leaveMeters < range.max,
+      );
+      const count = matches.filter((outcome) => outcome.threePutt).length;
+      return {
+        range: range.label,
+        attempts: matches.length,
+        threePutts: count,
+        threePuttRate: matches.length > 0 ? (count / matches.length) * 100 : 0,
+      };
+    }),
+  };
+}
+
+// 過去の自分の距離帯別平均パットを期待値とする簡易Strokes Gained。
+// 現在ラウンドを基準作成へ混ぜず、時系列で過去データだけを使う。
+export function calculatePersonalStrokesGained(
+  rounds: Round[],
+): PersonalStrokesGainedSummary {
+  const sorted = [...rounds].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+  const baselineByDistance = new Map<string, { total: number; count: number }>();
+  let baselineTotal = 0;
+  let baselineHoles = 0;
+  const results: PersonalStrokesGainedSummary["rounds"] = [];
+
+  for (const round of sorted) {
+    const observations = getPlayedHoles(round).flatMap((hole) => {
+      const firstPutt = hole.putts.find((putt) => putt.strokeNumber === 1);
+      if (!firstPutt || firstPutt.distanceMeters <= 0) return [];
+      return [{
+        distance: distanceCondition(firstPutt.distanceMeters),
+        actual: hole.totalPutts,
+      }];
+    });
+
+    if (baselineHoles >= MIN_RELIABLE_PUTT_SAMPLE && observations.length > 0) {
+      const personalAverage = baselineTotal / baselineHoles;
+      const priorHoles = 5;
+      const value = observations.reduce((sum, observation) => {
+        const bucket = baselineByDistance.get(observation.distance);
+        const expected = bucket
+          ? (bucket.total + personalAverage * priorHoles) / (bucket.count + priorHoles)
+          : personalAverage;
+        return sum + expected - observation.actual;
+      }, 0);
+      const date = new Date(round.date);
+      results.push({
+        roundId: round.id,
+        label: `${date.getMonth() + 1}/${date.getDate()}`,
+        holes: observations.length,
+        value,
+      });
+    }
+
+    // 評価後に追加し、ラウンド自身が期待値へ混ざるデータリークを防ぐ。
+    for (const observation of observations) {
+      const bucket = baselineByDistance.get(observation.distance) ?? { total: 0, count: 0 };
+      bucket.total += observation.actual;
+      bucket.count++;
+      baselineByDistance.set(observation.distance, bucket);
+      baselineTotal += observation.actual;
+      baselineHoles++;
+    }
+  }
+
+  const total = results.reduce((sum, round) => sum + round.value, 0);
+  const evaluatedHoles = results.reduce((sum, round) => sum + round.holes, 0);
+  return {
+    baselineHoles,
+    evaluatedHoles,
+    total,
+    perHole: evaluatedHoles > 0 ? total / evaluatedHoles : 0,
+    rounds: results,
+  };
+}
+
+// 記録データから、改善余地の大きい順に課題と練習メニューを返す。
+export function generatePracticeInsights(rounds: Round[]): PracticeInsight[] {
+  const playedHoles = rounds.flatMap(getPlayedHoles);
+  if (playedHoles.length === 0) return [];
+
+  const candidates: PracticeInsight[] = [];
+  const threePuttHoles = playedHoles.filter((hole) => hole.totalPutts >= 3).length;
+  const threePuttRate = (threePuttHoles / playedHoles.length) * 100;
+  candidates.push({
+    id: "three-putt",
+    title: "3パットを減らす",
+    summary: `3パット率 ${threePuttRate.toFixed(1)}%（${threePuttHoles}/${playedHoles.length}H）`,
+    practice: "10〜15mから1m以内へ止める距離感ドリルを10球×3セット",
+    sampleSize: playedHoles.length,
+    priority: threePuttRate * 1.4,
+  });
+
+  const distanceStats = calculateDistanceStats(rounds).filter((stat) => stat.attempts > 0);
+  if (distanceStats.length > 0) {
+    const weakest = [...distanceStats].sort(
+      (a, b) => a.rate - b.rate || b.attempts - a.attempts,
+    )[0];
+    candidates.push({
+      id: "distance",
+      title: `${weakest.range}の決定率を上げる`,
+      summary: `カップイン率 ${weakest.rate.toFixed(1)}%（n=${weakest.attempts}）`,
+      practice: `${weakest.range}から傾斜を変えて5球ずつ、合計30球のカップイン練習`,
+      sampleSize: weakest.attempts,
+      priority: 100 - weakest.rate,
+    });
+  } else {
+    candidates.push({
+      id: "record-distance",
+      title: "1stパット距離を記録する",
+      summary: "距離別の判定に必要なデータがまだありません",
+      practice: "次のラウンドでは各ホールの1stパット距離を優先して記録",
+      sampleSize: 0,
+      priority: 35,
+    });
+  }
+
+  const slopeCandidates = [
+    ...calculateSlopeStats(rounds).map((stat) => ({
+      id: `slope-ud-${stat.slope}`,
+      label: LABELS.slopeUpDown[stat.slope],
+      ...stat,
+    })),
+    ...calculateSlopeLeftRightStats(rounds).map((stat) => ({
+      id: `slope-lr-${stat.slope}`,
+      label: LABELS.slopeLeftRight[stat.slope],
+      ...stat,
+    })),
+  ].filter((stat) => stat.attempts > 0);
+
+  if (slopeCandidates.length > 0) {
+    const weakest = [...slopeCandidates].sort(
+      (a, b) => a.rate - b.rate || b.attempts - a.attempts,
+    )[0];
+    candidates.push({
+      id: weakest.id,
+      title: `${weakest.label}ラインを強化する`,
+      summary: `カップイン率 ${weakest.rate.toFixed(1)}%（n=${weakest.attempts}）`,
+      practice: `${weakest.label}ラインにゲートを2か所置き、スタート方向を確認しながら20球`,
+      sampleSize: weakest.attempts,
+      priority: (100 - weakest.rate) * 0.9,
+    });
+  }
+
+  const onePuttRate = calculateOnePuttRate(rounds);
+  candidates.push({
+    id: "one-putt",
+    title: "1パットで決め切る",
+    summary: `1パット率 ${onePuttRate.toFixed(1)}%`,
+    practice: "1〜2mを時計方向8地点から連続成功するまで繰り返すサークルドリル",
+    sampleSize: playedHoles.length,
+    priority: (100 - onePuttRate) * 0.65,
+  });
+
+  return candidates.sort((a, b) => b.priority - a.priority).slice(0, 3);
+}
+
 // 総合分析サマリー
 export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
   const basicStats = calculateBasicStats(rounds);
@@ -321,12 +585,12 @@ export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
     distanceStats: calculateDistanceStats(rounds),
     slopeStats: calculateSlopeStats(rounds),
     greenSpeedStats: calculateGreenSpeedStats(rounds),
-    mentalStats: calculateMentalStats(rounds),
-    // 新規7項目
-    touchStats: calculateTouchStats(rounds),
     slopeLeftRightStats: calculateSlopeLeftRightStats(rounds),
-    missedDirectionStats: calculateMissedDirectionStats(rounds),
+    trend: calculateRoundTrend(rounds),
+    lagAnalysis: calculateLagAnalysis(rounds),
+    personalStrokesGained: calculatePersonalStrokesGained(rounds),
     putterStats: calculatePutterStats(rounds),
+    adjustedPutterStats: calculateAdjustedPutterStats(rounds),
     grassTypeStats: calculateGrassTypeStats(rounds),
     weatherStats: calculateWeatherStats(rounds),
     courseStats: calculateCourseStats(rounds),
@@ -336,26 +600,28 @@ export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
 // 期間でフィルタリング
 export function filterRoundsByPeriod(
   rounds: Round[],
-  period: 'week' | 'month' | 'year' | 'all'
+  period: AnalyticsPeriod
 ): Round[] {
-  if (period === 'all') return rounds;
-  
-  const now = new Date();
-  let cutoffDate: Date;
-  
+  const cutoffDate = getPeriodCutoffDate(period);
+  if (!cutoffDate) return rounds;
+
+  return rounds.filter(r => new Date(r.date) >= cutoffDate);
+}
+
+export function getPeriodCutoffDate(
+  period: AnalyticsPeriod,
+  now: Date = new Date(),
+): Date | null {
   switch (period) {
     case 'week':
-      cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      break;
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     case 'month':
-      cutoffDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-      break;
+      return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
     case 'year':
-      cutoffDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-      break;
+      return new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    case 'all':
+      return null;
   }
-  
-  return rounds.filter(r => new Date(r.date) >= cutoffDate);
 }
 
 // 歩数から距離を計算

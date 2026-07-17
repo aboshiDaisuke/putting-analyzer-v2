@@ -29,27 +29,42 @@ interface CapturedImage {
   base64: string;
 }
 
-// Vercel Serverless Functions の本文上限は 4.5MB。
-// iPhoneのJPEG(quality 0.92, 2560px幅)は3〜6MB、base64で+33%になるため注意。
-// → アップロード前に最大2560px幅・quality 0.92 に圧縮。
-// 2560px: 手書き数字・塗りつぶし○の細部を高解像度で保持（1920→2560でOCR精度向上）
-// 圧縮失敗時は元のbase64にフォールバック。
+// Vercel Serverless Functions の本文上限は 4.5MB。送信する base64 文字列長 ≒ 本文バイト数。
+// 上限を安全側に 4.0MB とし、これを超える場合のみ段階的に解像度/品質を下げて収める。
+// 1段目(2560px/0.92)は手書き数字・塗りつぶし○の細部を高解像度で保持（OCR精度優先）。
+// スコアカードは余白が多くJPEGがよく圧縮されるため、通常は1段目で上限内に収まる。
+const MAX_UPLOAD_BASE64_LEN = 4_000_000;
+
 async function compressForUpload(uri: string, fallbackBase64: string): Promise<string> {
-  try {
-    const result = await ImageManipulator.manipulateAsync(
-      uri,
-      [{ resize: { width: 2560 } }],
-      {
-        compress: 0.92, // OCR精度向上: JPEGアーティファクト削減で手書き数字・塗りつぶし○の細部を保持
-        format: ImageManipulator.SaveFormat.JPEG,
-        base64: true,
-      }
-    );
-    return result.base64!;
-  } catch (e) {
-    console.warn("Image compression failed, using original:", e);
-    return fallbackBase64;
+  // 精度優先の順に試行し、最初に上限内へ収まったものを採用する
+  const attempts: { width: number; compress: number }[] = [
+    { width: 2560, compress: 0.92 },
+    { width: 2048, compress: 0.85 },
+    { width: 1600, compress: 0.8 },
+  ];
+
+  let last: string | null = null;
+  for (const a of attempts) {
+    try {
+      const result = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: a.width } }],
+        {
+          compress: a.compress,
+          format: ImageManipulator.SaveFormat.JPEG,
+          base64: true,
+        }
+      );
+      if (!result.base64) continue;
+      last = result.base64;
+      if (result.base64.length <= MAX_UPLOAD_BASE64_LEN) return result.base64;
+    } catch (e) {
+      console.warn("Image compression failed:", e);
+      break; // 失敗時はフォールバックへ
+    }
   }
+  // どの試行も上限超過/失敗 → 直近の圧縮結果、無ければ元のbase64
+  return last ?? fallbackBase64;
 }
 
 export default function ScanCardScreen() {
@@ -157,45 +172,69 @@ export default function ScanCardScreen() {
     setStep("capture");
   };
 
+  // 1枚を解析（圧縮 → Geminiへ送信）。撮影順を保つため結果は results[i] に格納する。
+  const analyzeImageAt = async (i: number, results: any[], onDone: () => void) => {
+    try {
+      // 圧縮（Vercel 4.5MB 上限対策: 段階圧縮で上限内に収める）
+      const compressedBase64 = await compressForUpload(
+        capturedImages[i].uri,
+        capturedImages[i].base64
+      );
+      // base64を直接Geminiへ送信（Supabase経由不要 → ラウンドトリップ削減で高速化）
+      const analyzeResult = await analyzeMutation.mutateAsync({
+        base64: compressedBase64,
+        mimeType: "image/jpeg",
+      });
+      results[i] =
+        analyzeResult.success && analyzeResult.data
+          ? analyzeResult.data
+          : { error: true, index: i + 1 };
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error(`Image ${i + 1} analysis failed:`, error);
+      results[i] = { error: true, index: i + 1, message: errMsg };
+    } finally {
+      onDone();
+    }
+  };
+
   const handleAnalyze = async () => {
     if (capturedImages.length === 0) return;
 
     setStep("analyzing");
     setAnalysisProgress(0);
     setAnalysisError(null);
-    const results: any[] = [];
 
-    for (let i = 0; i < capturedImages.length; i++) {
-      try {
-        setAnalysisProgress((i / capturedImages.length) * 100);
+    const total = capturedImages.length;
+    const results: any[] = new Array(total);
+    let completed = 0;
+    const markDone = () => {
+      completed += 1;
+      setAnalysisProgress((completed / total) * 100);
+    };
 
-        // 1. 画像を圧縮（Vercel 4.5MB 上限対策: 2560px幅・quality 0.92）
-        const compressedBase64 = await compressForUpload(capturedImages[i].uri, capturedImages[i].base64);
-
-        // 2. base64を直接Geminiへ送信（Supabase経由不要 → ラウンドトリップ削減で高速化）
-        const analyzeResult = await analyzeMutation.mutateAsync({
-          base64: compressedBase64,
-          mimeType: "image/jpeg",
-        });
-
-        if (analyzeResult.success && analyzeResult.data) {
-          results.push(analyzeResult.data);
-        } else {
-          results.push({ error: true, index: i + 1 });
+    // 同時実行数を制限したワーカープールで並列解析（APIレート制限に配慮しつつ高速化）。
+    // 高精度モデルは1枚あたり時間がかかるため、逐次より体感が大幅に改善する。
+    const CONCURRENCY = 3;
+    let cursor = 0;
+    const workers = Array.from(
+      { length: Math.min(CONCURRENCY, total) },
+      async () => {
+        while (cursor < total) {
+          const i = cursor;
+          cursor += 1;
+          await analyzeImageAt(i, results, markDone);
         }
-      } catch (error) {
-        const errMsg = error instanceof Error ? error.message : String(error);
-        console.error(`Image ${i + 1} analysis failed:`, error);
-        results.push({ error: true, index: i + 1, message: errMsg });
       }
-    }
+    );
+    await Promise.all(workers);
 
     setAnalysisProgress(100);
     setAnalysisResults(results);
     setStep("done");
 
     // 結果画面に遷移
-    const validResults = results.filter((r) => !r.error);
+    const validResults = results.filter((r) => r && !r.error);
     if (validResults.length > 0) {
       // OCR結果をパラメータとして渡す（roundIdがあれば一緒に渡す）
       router.push({
@@ -208,7 +247,7 @@ export default function ScanCardScreen() {
     } else {
       // Alert.alert はWebで正常動作しないためインライン表示に切り替え
       const errDetails = results
-        .filter((r) => r.error && r.message)
+        .filter((r) => r && r.error && r.message)
         .map((r) => r.message)
         .join("\n");
       setAnalysisError(

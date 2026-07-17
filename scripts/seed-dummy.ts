@@ -140,11 +140,11 @@ async function main() {
         await sql`
           INSERT INTO putts (
             "holeId", "strokeNumber", "cupIn", "distanceMeters",
-            "lineUD", "lineLR", "touch", result
+            "lineUD", "lineLR", result
           ) VALUES (
             ${newHole.id}, ${putt.strokeNumber}, ${putt.cupIn},
             ${putt.distanceMeters}, ${putt.lineUD}, ${putt.lineLR},
-            ${putt.touch}, ${putt.result}
+            ${putt.result}
           )
         `;
       }
@@ -180,7 +180,6 @@ function generateHoleData() {
         distanceMeters: s === 1 ? dist : s === 2 ? 0.6 + Math.random() * 1.5 : 0.3,
         lineUD: lineUDs[Math.floor(Math.random() * lineUDs.length)],
         lineLR: lineLRs[Math.floor(Math.random() * lineLRs.length)],
-        touch: Math.floor(2 + Math.random() * 3), // 2〜4
         result: results[Math.floor(Math.random() * results.length)],
       });
     }

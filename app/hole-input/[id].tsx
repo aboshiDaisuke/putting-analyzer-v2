@@ -16,7 +16,7 @@ import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { hapticSuccess } from "@/lib/haptics";
-import { getRound, updateRound, getUserProfile, saveHolesForRound } from "@/lib/storage";
+import { getRound, getUserProfile, saveHolesForRound } from "@/lib/storage";
 import { calculateDistance } from "@/lib/analytics";
 import {
   Round,
@@ -25,9 +25,6 @@ import {
   ScoreResult,
   SlopeUpDown,
   SlopeLeftRight,
-  MentalState,
-  PuttStrength,
-  MissedDirection,
   LABELS,
   createDefaultPutt,
 } from "@/lib/types";
@@ -93,11 +90,8 @@ export default function HoleInputScreen() {
   const [result, setResult] = useState<ScoreResult | null>(null);
   const [lengthSteps, setLengthSteps] = useState("");
   const [lengthMeters, setLengthYards] = useState("");
-  const [missedDirection, setMissedDirection] = useState<MissedDirection | null>(null);
-  const [touch, setTouch] = useState<PuttStrength | null>(null);
   const [lineUD, setLineUD] = useState<SlopeUpDown>("flat");
   const [lineLR, setLineLR] = useState<SlopeLeftRight>("straight");
-  const [mental, setMental] = useState<MentalState | null>(3);
 
   // ラウンド終了確認UI
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
@@ -163,11 +157,8 @@ export default function HoleInputScreen() {
     setResult(putt.result);
     setLengthSteps(putt.lengthSteps?.toString() || "");
     setLengthYards(putt.lengthMeters?.toString() || "");
-    setMissedDirection(putt.missedDirection);
-    setTouch(putt.touch);
     setLineUD(putt.lineUD);
     setLineLR(putt.lineLR);
-    setMental(putt.mental);
   };
 
   const getCurrentPuttData = (): PuttData => {
@@ -180,11 +171,8 @@ export default function HoleInputScreen() {
       lengthSteps: steps || null,
       lengthMeters: parseFloat(lengthMeters) || null,
       distanceMeters: calculateDistance(steps, strideLength),
-      missedDirection,
-      touch,
       lineUD,
       lineLR,
-      mental,
     };
   };
 
@@ -276,11 +264,8 @@ export default function HoleInputScreen() {
     const totalRoundPutts = updatedHoles.reduce((sum, h) => sum + h.totalPutts, 0);
 
     try {
-      // Persist hole data to the server (separate holes table)
-      await saveHolesForRound(round.id, updatedHoles);
-
-      // Update the round's totalPutts metadata
-      await updateRound(round.id, { totalPutts: totalRoundPutts });
+      // ホール保存とラウンド合計(totalPutts)の更新を1リクエストにまとめ、部分保存を防ぐ
+      await saveHolesForRound(round.id, updatedHoles, totalRoundPutts);
 
       // Update local state with merged holes (preserve scoreResult from UI state)
       const updatedRound: Round = {
@@ -583,39 +568,6 @@ export default function HoleInputScreen() {
               </View>
             </View>
 
-            {/* Missed Direction 1-5 */}
-            <View>
-              <Text className="text-muted text-sm mb-2 font-medium">Missed Direction</Text>
-              <View className="flex-row justify-between">
-                {([1, 2, 3, 4, 5] as MissedDirection[]).map((d) => (
-                  <SelectButton
-                    key={d}
-                    label={String(d)}
-                    selected={missedDirection === d}
-                    onPress={() => setMissedDirection(missedDirection === d ? null : d)}
-                    color="error"
-                    compact
-                  />
-                ))}
-              </View>
-            </View>
-
-            {/* Touch (弱1-5強) */}
-            <View>
-              <Text className="text-muted text-sm mb-2 font-medium">Touch (弱1-5強)</Text>
-              <View className="flex-row justify-between">
-                {([1, 2, 3, 4, 5] as PuttStrength[]).map((s) => (
-                  <SelectButton
-                    key={s}
-                    label={LABELS.puttStrength[s]}
-                    selected={touch === s}
-                    onPress={() => setTouch(touch === s ? null : s)}
-                    compact
-                  />
-                ))}
-              </View>
-            </View>
-
             {/* Line (U/D) */}
             <View>
               <Text className="text-muted text-sm mb-2 font-medium">Line (U/D)</Text>
@@ -642,31 +594,6 @@ export default function HoleInputScreen() {
                     label={LABELS.slopeLeftRightShort[s]}
                     selected={lineLR === s}
                     onPress={() => setLineLR(s)}
-                    compact
-                  />
-                ))}
-              </View>
-            </View>
-
-            {/* Mental (P/N) */}
-            <View>
-              <Text className="text-muted text-sm mb-2 font-medium">Mental (P/N)</Text>
-              <View className="flex-row justify-between">
-                {(["P", 1, 2, 3, 4, 5, "N"] as MentalState[]).map((s) => (
-                  <SelectButton
-                    key={String(s)}
-                    label={LABELS.mentalState[s]}
-                    selected={mental === s}
-                    onPress={() => setMental(s)}
-                    color={
-                      s === "P" || s === 1
-                        ? "success"
-                        : s === "N" || s === 5
-                        ? "error"
-                        : s === 4
-                        ? "warning"
-                        : "primary"
-                    }
                     compact
                   />
                 ))}

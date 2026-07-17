@@ -152,6 +152,10 @@ export async function getRounds(): Promise<Round[]> {
   return ApiGolf.getRounds();
 }
 
+export async function getRoundsWithHoles(fromDate?: string): Promise<Round[]> {
+  return ApiGolf.getRoundsWithHoles(fromDate);
+}
+
 export async function getRound(id: string): Promise<Round | null> {
   return ApiGolf.getRound(id);
 }
@@ -186,8 +190,9 @@ export async function deleteAllRounds(): Promise<boolean> {
 export async function saveHolesForRound(
   roundId: string,
   holes: HoleData[],
+  roundTotalPutts?: number,
 ): Promise<{ roundId: string; holes: HoleData[] }> {
-  return ApiGolf.saveHolesForRound(roundId, holes);
+  return ApiGolf.saveHolesForRound(roundId, holes, roundTotalPutts);
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────

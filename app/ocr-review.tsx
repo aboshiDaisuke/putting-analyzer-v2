@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Text,
   View,
@@ -16,7 +16,7 @@ import { useColors } from "@/hooks/use-colors";
 import { hapticSuccess } from "@/lib/haptics";
 import type { OcrHoleData, OcrPuttData } from "@/lib/ocr-utils";
 import { convertOcrBatchToHoles } from "@/lib/ocr-utils";
-import { saveRound, saveHolesForRound, updateRound } from "@/lib/storage";
+import { saveRound, saveHolesForRound } from "@/lib/storage";
 import type { Round } from "@/lib/types";
 
 // カード表記のラベル
@@ -96,6 +96,12 @@ export default function OcrReviewScreen() {
   const [confirmSkip, setConfirmSkip] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Hole番号が未設定のカード数（保存時のスキップ確認・件数表示で共有）
+  const skippedCount = useMemo(
+    () => ocrResults.filter((r) => !r.hole).length,
+    [ocrResults],
+  );
+
   useEffect(() => {
     if (data) {
       try {
@@ -143,8 +149,10 @@ export default function OcrReviewScreen() {
   const handleSaveToRound = () => {
     if (ocrResults.length === 0) return;
 
+    // 前回の保存エラーをクリア（確認ボックスやキャンセル後に残さない）
+    setErrorMsg(null);
+
     // Hole番号が未設定のカードは convertOcrBatchToHoles で除外されるため、事前に確認する
-    const skippedCount = ocrResults.filter((r) => !r.hole).length;
     if (skippedCount > 0) {
       setConfirmSkip(true);
       return;
@@ -153,6 +161,7 @@ export default function OcrReviewScreen() {
   };
 
   const doSave = async () => {
+    if (isSaving) return; // 二重保存防止
     setIsSaving(true);
     setErrorMsg(null);
     try {
@@ -168,15 +177,17 @@ export default function OcrReviewScreen() {
 
       if (roundId) {
         // ─── 既存ラウンドにホールデータを保存 ───────────────────────────
-        await saveHolesForRound(roundId, holes);
-        await updateRound(roundId, { totalPutts });
+        // ホール保存とラウンド合計の更新を1リクエストにまとめ、部分保存を防ぐ
+        await saveHolesForRound(roundId, holes, totalPutts);
         hapticSuccess();
         router.replace(`/round/${roundId}` as any);
       } else {
         // ─── 後方互換：新規ラウンドとして保存 ──────────────────────────
-        const firstResult = ocrResults[0];
-        const dateStr = firstResult.date || "";
-        const courseName = firstResult.course || "未設定";
+        // ホールが無くスキップされるカードは convertOcrBatchToHoles で除外されるため、
+        // 日付/コースは実際にホールデータを持つ最初のカードから採用する。
+        const firstValid = ocrResults.find((r) => r.hole != null) ?? ocrResults[0];
+        const dateStr = firstValid.date || "";
+        const courseName = firstValid.course || "未設定";
 
         const now = new Date();
         let roundDate = now.toISOString();
@@ -497,8 +508,8 @@ export default function OcrReviewScreen() {
         <Text className="text-lg font-semibold text-foreground">読み取り結果</Text>
         <TouchableOpacity
           onPress={handleSaveToRound}
-          disabled={isSaving}
-          style={{ opacity: isSaving ? 0.5 : 1 }}
+          disabled={isSaving || confirmSkip}
+          style={{ opacity: isSaving || confirmSkip ? 0.5 : 1 }}
         >
           <Text className="text-primary font-semibold">
             {isSaving ? "保存中..." : "保存"}
@@ -516,7 +527,7 @@ export default function OcrReviewScreen() {
       {/* Hole未設定カードのスキップ確認 */}
       {confirmSkip && (
         <ConfirmBox
-          message={`Hole番号が未設定のカードが${ocrResults.filter((r) => !r.hole).length}件あります`}
+          message={`Hole番号が未設定のカードが${skippedCount}件あります`}
           detail="このまま保存するとスキップされます。続行しますか？"
           confirmLabel="続行"
           variant="warning"
