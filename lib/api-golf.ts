@@ -478,10 +478,11 @@ export async function getRounds(): Promise<Round[]> {
  * Like getRounds, but with holes and putts hydrated. Use for analytics, where
  * per-hole/per-putt stats (1-putt rate, distance/slope breakdowns) are needed.
  */
-export async function getRoundsWithHoles(): Promise<Round[]> {
+export async function getRoundsWithHoles(fromDate?: string): Promise<Round[]> {
   try {
     const list = await trpcQuery<(DbRound & { holes: DbHole[] })[]>(
       "golf.rounds.listWithHoles",
+      { fromDate },
     );
     if (!list || list.length === 0) return [];
     const rounds = list.map((r) => dbRoundToClient(r));

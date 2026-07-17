@@ -34,6 +34,14 @@ const SPEED_RANGES = [
   { min: 11, max: Infinity, label: '11ft+' },
 ];
 
+export type AnalyticsPeriod = 'week' | 'month' | 'year' | 'all';
+
+// DB/API変換後のラウンドは未入力ホールも totalPutts=0 で保持するため、
+// 分析の分母には実際にパットが入力されたホールだけを使う。
+export function getPlayedHoles(round: Round): HoleData[] {
+  return round.holes.filter((hole) => hole.totalPutts > 0);
+}
+
 // 全パットデータを抽出
 export function extractAllPutts(rounds: Round[]): { putt: PuttData; round: Round; hole: HoleData }[] {
   const result: { putt: PuttData; round: Round; hole: HoleData }[] = [];
@@ -63,19 +71,23 @@ export function calculateBasicStats(rounds: Round[]): {
   averagePuttsPerHole: number;
 } {
   const totalRounds = rounds.length;
+  let playedRounds = 0;
   let totalHoles = 0;
   let totalPutts = 0;
   
   for (const round of rounds) {
-    totalHoles += round.holes.length;
-    totalPutts += round.totalPutts;
+    const played = getPlayedHoles(round);
+    if (played.length === 0) continue;
+    playedRounds++;
+    totalHoles += played.length;
+    totalPutts += played.reduce((sum, hole) => sum + hole.totalPutts, 0);
   }
   
   return {
     totalRounds,
     totalHoles,
     totalPutts,
-    averagePuttsPerRound: totalRounds > 0 ? totalPutts / totalRounds : 0,
+    averagePuttsPerRound: playedRounds > 0 ? totalPutts / playedRounds : 0,
     averagePuttsPerHole: totalHoles > 0 ? totalPutts / totalHoles : 0,
   };
 }
@@ -86,7 +98,7 @@ export function calculateOnePuttRate(rounds: Round[]): number {
   let totalHoles = 0;
   
   for (const round of rounds) {
-    for (const hole of round.holes) {
+    for (const hole of getPlayedHoles(round)) {
       totalHoles++;
       if (hole.totalPutts === 1) {
         onePuttHoles++;
@@ -103,7 +115,7 @@ export function calculateThreePuttRate(rounds: Round[]): number {
   let totalHoles = 0;
   
   for (const round of rounds) {
-    for (const hole of round.holes) {
+    for (const hole of getPlayedHoles(round)) {
       totalHoles++;
       if (hole.totalPutts >= 3) {
         threePuttHoles++;
@@ -166,11 +178,12 @@ export function calculateSlopeStats(rounds: Round[]): SlopeStats[] {
 export function calculateGreenSpeedStats(rounds: Round[]): GreenSpeedStats[] {
   return SPEED_RANGES.map(range => {
     const roundsInRange = rounds.filter(
-      r => r.stimpmeter >= range.min && r.stimpmeter < range.max
+      r => r.stimpmeter >= range.min && r.stimpmeter < range.max && getPlayedHoles(r).length > 0
     );
     
-    const totalPutts = roundsInRange.reduce((sum, r) => sum + r.totalPutts, 0);
-    const totalHoles = roundsInRange.reduce((sum, r) => sum + r.holes.length, 0);
+    const playedHoles = roundsInRange.flatMap(getPlayedHoles);
+    const totalPutts = playedHoles.reduce((sum, h) => sum + h.totalPutts, 0);
+    const totalHoles = playedHoles.length;
     
     return {
       speedRange: range.label,
@@ -209,9 +222,12 @@ function calculateMetadataAvgPutts(
     const key = groupBy(round);
     if (!key) continue;
 
+    const played = getPlayedHoles(round);
+    if (played.length === 0) continue;
+
     const existing = groups.get(key) ?? { totalPutts: 0, totalHoles: 0, rounds: 0 };
-    existing.totalPutts += round.totalPutts;
-    existing.totalHoles += round.holes.length;
+    existing.totalPutts += played.reduce((sum, hole) => sum + hole.totalPutts, 0);
+    existing.totalHoles += played.length;
     existing.rounds += 1;
     groups.set(key, existing);
   }
@@ -253,18 +269,19 @@ export function calculateCourseStats(rounds: Round[]): MetadataAvgPuttsItem[] {
 export function calculateRoundTrend(rounds: Round[]): RoundTrendItem[] {
   return [...rounds]
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .map((round) => {
-      // 実際にプレーしたホールのみで集計する（list 取得時に dbRoundToClient が
-      // 18ホールへ補完する空ホール totalPutts=0 を分母から除外）。
-      const played = round.holes.filter((h) => h.totalPutts > 0);
+    .flatMap((round) => {
+      const played = getPlayedHoles(round);
       const holeCount = played.length;
+      if (holeCount === 0) return [];
+
+      const totalPutts = played.reduce((sum, hole) => sum + hole.totalPutts, 0);
       const onePuttHoles = played.filter((h) => h.totalPutts === 1).length;
       const d = new Date(round.date);
-      return {
+      return [{
         label: `${d.getMonth() + 1}/${d.getDate()}`,
-        avgPutts: holeCount > 0 ? round.totalPutts / holeCount : 0,
-        onePuttRate: holeCount > 0 ? (onePuttHoles / holeCount) * 100 : 0,
-      };
+        avgPutts: totalPutts / holeCount,
+        onePuttRate: (onePuttHoles / holeCount) * 100,
+      }];
     });
 }
 
@@ -293,26 +310,28 @@ export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
 // 期間でフィルタリング
 export function filterRoundsByPeriod(
   rounds: Round[],
-  period: 'week' | 'month' | 'year' | 'all'
+  period: AnalyticsPeriod
 ): Round[] {
-  if (period === 'all') return rounds;
-  
-  const now = new Date();
-  let cutoffDate: Date;
-  
+  const cutoffDate = getPeriodCutoffDate(period);
+  if (!cutoffDate) return rounds;
+
+  return rounds.filter(r => new Date(r.date) >= cutoffDate);
+}
+
+export function getPeriodCutoffDate(
+  period: AnalyticsPeriod,
+  now: Date = new Date(),
+): Date | null {
   switch (period) {
     case 'week':
-      cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      break;
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     case 'month':
-      cutoffDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-      break;
+      return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
     case 'year':
-      cutoffDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-      break;
+      return new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    case 'all':
+      return null;
   }
-  
-  return rounds.filter(r => new Date(r.date) >= cutoffDate);
 }
 
 // 歩数から距離を計算

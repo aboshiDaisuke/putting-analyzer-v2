@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   Text,
@@ -24,9 +24,9 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 }
 import {
   calculateAnalyticsSummary,
-  filterRoundsByPeriod,
+  getPeriodCutoffDate,
 } from "@/lib/analytics";
-import { Round, AnalyticsSummary, MetadataAvgPuttsItem, LABELS } from "@/lib/types";
+import { Round, MetadataAvgPuttsItem, LABELS } from "@/lib/types";
 
 type Period = "week" | "month" | "year" | "all";
 
@@ -37,11 +37,19 @@ const PERIOD_LABELS: Record<Period, string> = {
   all: "全期間",
 };
 
+function toApiDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function AnalyticsScreen() {
   const colors = useColors();
   const [rounds, setRounds] = useState<Round[]>([]);
   const [period, setPeriod] = useState<Period>("all");
-  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const requestIdRef = useRef(0);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     technique: true,
     environment: false,
@@ -55,28 +63,37 @@ export default function AnalyticsScreen() {
   };
 
   const loadData = useCallback(async () => {
-    const allRounds = await getRoundsWithHoles();
-    setRounds(allRounds);
-    const filtered = filterRoundsByPeriod(allRounds, period);
-    setSummary(calculateAnalyticsSummary(filtered));
+    const requestId = ++requestIdRef.current;
+    setIsLoading(true);
+    const cutoff = getPeriodCutoffDate(period);
+
+    try {
+      const loadedRounds = await getRoundsWithHoles(cutoff ? toApiDate(cutoff) : undefined);
+      if (requestId !== requestIdRef.current) return;
+      setRounds(loadedRounds);
+    } catch (error) {
+      if (requestId !== requestIdRef.current) return;
+      console.error("[analytics] Failed to load rounds:", error);
+      setRounds([]);
+    } finally {
+      if (requestId === requestIdRef.current) setIsLoading(false);
+    }
   }, [period]);
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
+      void loadData();
+      return () => {
+        requestIdRef.current++;
+      };
     }, [loadData])
   );
 
-  // チャートの onLayout 起因の再レンダーで全ラウンドを再フィルタしないようメモ化
-  const filteredRounds = useMemo(
-    () => filterRoundsByPeriod(rounds, period),
-    [rounds, period],
-  );
+  const summary = useMemo(() => calculateAnalyticsSummary(rounds), [rounds]);
 
   // チャート用データ配列を summary 単位で1回だけ生成（毎レンダーの再 map と
   // 新規参照によるチャートの再描画を防ぐ）。
   const chartData = useMemo(() => {
-    if (!summary) return null;
     return {
       trendAvg: summary.trend.map((t) => ({ label: t.label, value: t.avgPutts })),
       trendOnePutt: summary.trend.map((t) => ({ label: t.label, value: t.onePuttRate })),
@@ -103,7 +120,17 @@ export default function AnalyticsScreen() {
     };
   }, [summary]);
 
-  if (!summary || !chartData || filteredRounds.length === 0) {
+  if (isLoading) {
+    return (
+      <ScreenContainer className="p-4">
+        <Text className="text-2xl font-bold text-foreground mb-4">分析</Text>
+        <PeriodSelector period={period} onSelect={setPeriod} />
+        <Text className="text-muted text-center py-12">読み込み中...</Text>
+      </ScreenContainer>
+    );
+  }
+
+  if (rounds.length === 0) {
     return (
       <ScreenContainer className="p-4">
         <Text className="text-2xl font-bold text-foreground mb-4">分析</Text>

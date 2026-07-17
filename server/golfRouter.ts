@@ -258,9 +258,11 @@ export const roundsRouter = router({
   }),
 
   /** Like list, but with all holes and putts hydrated (for analytics). */
-  listWithHoles: protectedProcedure.query(async ({ ctx }) => {
-    return getRoundsWithHoles(ctx.user.id);
-  }),
+  listWithHoles: protectedProcedure
+    .input(z.object({ fromDate: z.string().date().optional() }))
+    .query(async ({ ctx, input }) => {
+      return getRoundsWithHoles(ctx.user.id, input.fromDate);
+    }),
 
   /** Returns the round with all nested holes and putts. */
   get: protectedProcedure

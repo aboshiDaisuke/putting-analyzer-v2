@@ -4,6 +4,9 @@ import {
   formatDate,
   getDistanceRange,
   calculateStats,
+  calculateAnalyticsSummary,
+  calculateRoundTrend,
+  getPeriodCutoffDate,
   analyzeByDistance,
   analyzeBySlope,
 } from "../analytics";
@@ -54,6 +57,49 @@ const createRound = (
 });
 
 describe("Analytics Functions", () => {
+  describe("hydrated round analytics", () => {
+    it("uses only holes with entered putts for 9-hole summary metrics", () => {
+      const holes = Array.from({ length: 18 }, (_, i) => ({
+        totalPutts: i < 3 ? 1 : i < 9 ? 2 : 0,
+      }));
+      const round = createRound(999, holes);
+
+      const summary = calculateAnalyticsSummary([round]);
+
+      expect(summary.averagePutts).toBeCloseTo(15 / 9);
+      expect(summary.onePuttRate).toBeCloseTo((3 / 9) * 100);
+      expect(summary.threePuttRate).toBe(0);
+      expect(summary.greenSpeedStats.find((s) => s.rounds > 0)?.averagePutts)
+        .toBeCloseTo(15 / 9);
+      expect(summary.putterStats[0].averagePutts).toBeCloseTo(15 / 9);
+    });
+
+    it("excludes empty rounds from trends and derives totals from played holes", () => {
+      const played = createRound(999, [
+        { totalPutts: 1 },
+        { totalPutts: 2 },
+        { totalPutts: 2 },
+      ]);
+      const empty = createRound(0, Array.from({ length: 18 }, () => ({ totalPutts: 0 })));
+      empty.id = "empty";
+      empty.date = "2024-01-16T09:00:00.000Z";
+
+      const trend = calculateRoundTrend([empty, played]);
+
+      expect(trend).toHaveLength(1);
+      expect(trend[0].avgPutts).toBeCloseTo(5 / 3);
+      expect(trend[0].onePuttRate).toBeCloseTo(100 / 3);
+    });
+
+    it("creates stable period cutoffs from an injected clock", () => {
+      const now = new Date(2026, 6, 17, 12);
+
+      expect(getPeriodCutoffDate("all", now)).toBeNull();
+      expect(getPeriodCutoffDate("month", now)).toEqual(new Date(2026, 5, 17));
+      expect(getPeriodCutoffDate("year", now)).toEqual(new Date(2025, 6, 17));
+    });
+  });
+
   describe("calculateDistance", () => {
     it("should calculate distance from steps and stride length", () => {
       expect(calculateDistance(10, 0.7)).toBe(7);

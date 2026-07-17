@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -287,11 +287,18 @@ export async function getRounds(userId: number) {
  * Uses 3 batched queries (rounds, holes, putts) to avoid N+1. Intended for
  * the analytics screen, where per-hole/per-putt data is required.
  */
-export async function getRoundsWithHoles(userId: number) {
+export async function getRoundsWithHoles(userId: number, fromDate?: string) {
   const db = await getDb();
   if (!db) return [];
 
-  const roundRows = await db.select().from(rounds).where(eq(rounds.userId, userId));
+  const roundRows = await db
+    .select()
+    .from(rounds)
+    .where(
+      fromDate
+        ? and(eq(rounds.userId, userId), gte(rounds.date, fromDate))
+        : eq(rounds.userId, userId),
+    );
   if (roundRows.length === 0) return [];
 
   const roundIds = roundRows.map((r) => r.id);
