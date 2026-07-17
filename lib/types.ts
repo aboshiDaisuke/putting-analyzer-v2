@@ -126,9 +126,19 @@ export interface AnalyticsSummary {
   trend: RoundTrendItem[]; // ラウンドごとの推移（日付昇順）
   lagAnalysis: LagAnalysis;
   putterStats: MetadataAvgPuttsItem[];
+  adjustedPutterStats: AdjustedPutterStatsItem[];
   grassTypeStats: MetadataAvgPuttsItem[];
   weatherStats: MetadataAvgPuttsItem[];
   courseStats: MetadataAvgPuttsItem[];
+}
+
+export interface AdjustedPutterStatsItem {
+  putterName: string;
+  holes: number;
+  rounds: number;
+  rawAveragePutts: number;
+  adjustedAveragePutts: number;
+  versusPersonalBaseline: number;
 }
 
 export interface LagDistanceBucket {

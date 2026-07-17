@@ -10,6 +10,7 @@ import {
   generatePracticeInsights,
   isReferenceSample,
   calculateLagAnalysis,
+  calculateAdjustedPutterStats,
   analyzeByDistance,
   analyzeBySlope,
 } from "../analytics";
@@ -148,6 +149,26 @@ describe("Analytics Functions", () => {
       expect(lag.recordedHoles).toBe(2);
       expect(lag.averageLeaveMeters).toBeCloseTo(1.3716);
       expect(lag.buckets.find((bucket) => bucket.range === "1〜2m")?.threePuttRate).toBe(100);
+    });
+
+    it("produces condition-adjusted putter rankings", () => {
+      const shortPutt = createPutt({ distanceMeters: 1, lineUD: "flat", lineLR: "straight" });
+      const longPutt = createPutt({ distanceMeters: 8, lineUD: "uphill", lineLR: "left" });
+      const putterA = createRound(2, [{ totalPutts: 2, putts: [shortPutt] }]);
+      putterA.putterName = "Putter A";
+      putterA.courseName = "Easy";
+      const putterB = createRound(3, [{ totalPutts: 3, putts: [longPutt] }]);
+      putterB.id = "round-b";
+      putterB.putterName = "Putter B";
+      putterB.courseName = "Hard";
+
+      const stats = calculateAdjustedPutterStats([putterA, putterB]);
+      const a = stats.find((item) => item.putterName === "Putter A")!;
+      const b = stats.find((item) => item.putterName === "Putter B")!;
+
+      expect(stats).toHaveLength(2);
+      expect(Math.abs(a.adjustedAveragePutts - b.adjustedAveragePutts))
+        .toBeLessThan(Math.abs(a.rawAveragePutts - b.rawAveragePutts));
     });
   });
 

@@ -11,6 +11,7 @@ import {
   RoundTrendItem,
   PracticeInsight,
   LagAnalysis,
+  AdjustedPutterStatsItem,
   SlopeUpDown,
   SlopeLeftRight,
   LABELS,
@@ -258,6 +259,91 @@ export function calculatePutterStats(rounds: Round[]): MetadataAvgPuttsItem[] {
   return calculateMetadataAvgPutts(rounds, r => r.putterName || '不明');
 }
 
+function distanceCondition(distanceMeters: number): string {
+  return DISTANCE_RANGES.find(
+    (range) => distanceMeters >= range.min && distanceMeters < range.max,
+  )?.label ?? '距離不明';
+}
+
+// 距離・傾斜・コースごとの難易度を個人データ内で推定し、各ホールの期待値との差を
+// パター別に集計する。少数条件は個人全体平均へ縮約して過補正を防ぐ。
+export function calculateAdjustedPutterStats(rounds: Round[]): AdjustedPutterStatsItem[] {
+  const observations = rounds.flatMap((round) =>
+    getPlayedHoles(round).map((hole) => {
+      const firstPutt = hole.putts.find((putt) => putt.strokeNumber === 1);
+      return {
+        putterName: round.putterName || '不明',
+        roundId: round.id,
+        totalPutts: hole.totalPutts,
+        conditions: [
+          `distance:${distanceCondition(firstPutt?.distanceMeters ?? 0)}`,
+          `ud:${firstPutt?.lineUD ?? 'unknown'}`,
+          `lr:${firstPutt?.lineLR ?? 'unknown'}`,
+          `course:${round.courseName || '不明'}`,
+        ],
+      };
+    }),
+  );
+  if (observations.length === 0) return [];
+
+  const globalAverage = observations.reduce((sum, item) => sum + item.totalPutts, 0)
+    / observations.length;
+  const conditionTotals = new Map<string, { total: number; count: number }>();
+  for (const item of observations) {
+    for (const condition of item.conditions) {
+      const current = conditionTotals.get(condition) ?? { total: 0, count: 0 };
+      current.total += item.totalPutts;
+      current.count++;
+      conditionTotals.set(condition, current);
+    }
+  }
+
+  const priorHoles = 5;
+  const expectedFor = (conditions: string[]) => {
+    const adjustedConditions = conditions.map((condition) => {
+      const stats = conditionTotals.get(condition);
+      if (!stats) return globalAverage;
+      return (stats.total + globalAverage * priorHoles) / (stats.count + priorHoles);
+    });
+    return adjustedConditions.reduce((sum, value) => sum + value, 0)
+      / adjustedConditions.length;
+  };
+
+  const groups = new Map<string, {
+    rawTotal: number;
+    residualTotal: number;
+    holes: number;
+    roundIds: Set<string>;
+  }>();
+  for (const item of observations) {
+    const group = groups.get(item.putterName) ?? {
+      rawTotal: 0,
+      residualTotal: 0,
+      holes: 0,
+      roundIds: new Set<string>(),
+    };
+    group.rawTotal += item.totalPutts;
+    group.residualTotal += item.totalPutts - expectedFor(item.conditions);
+    group.holes++;
+    group.roundIds.add(item.roundId);
+    groups.set(item.putterName, group);
+  }
+
+  return [...groups.entries()]
+    .map(([putterName, data]) => {
+      const adjustedAveragePutts = globalAverage + data.residualTotal / data.holes;
+      return {
+        putterName,
+        holes: data.holes,
+        rounds: data.roundIds.size,
+        rawAveragePutts: data.rawTotal / data.holes,
+        adjustedAveragePutts,
+        versusPersonalBaseline: adjustedAveragePutts - globalAverage,
+      };
+    })
+    .sort((a, b) => a.adjustedAveragePutts - b.adjustedAveragePutts);
+}
+
 // 芝の種類別平均パット/H
 export function calculateGrassTypeStats(rounds: Round[]): MetadataAvgPuttsItem[] {
   return calculateMetadataAvgPutts(rounds, r => LABELS.grassType[r.grassType] || r.grassType);
@@ -438,6 +524,7 @@ export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
     trend: calculateRoundTrend(rounds),
     lagAnalysis: calculateLagAnalysis(rounds),
     putterStats: calculatePutterStats(rounds),
+    adjustedPutterStats: calculateAdjustedPutterStats(rounds),
     grassTypeStats: calculateGrassTypeStats(rounds),
     weatherStats: calculateWeatherStats(rounds),
     courseStats: calculateCourseStats(rounds),

@@ -407,14 +407,50 @@ export default function AnalyticsScreen() {
             groupKey="equipment"
             expanded={expandedGroups.equipment}
             onToggle={toggleGroup}
-            sectionCount={1}
+            sectionCount={2}
             colors={colors}
           >
             <MetadataSection title="パター別平均パット" data={summary.putterStats} />
+            <AdjustedPutterSection data={summary.adjustedPutterStats} />
           </SectionGroup>
         </View>
       </ScrollView>
     </ScreenContainer>
+  );
+}
+
+function AdjustedPutterSection({
+  data,
+}: {
+  data: import("@/lib/types").AdjustedPutterStatsItem[];
+}) {
+  return (
+    <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+      <Text className="text-lg font-semibold text-foreground">条件補正パター比較</Text>
+      <Text className="text-muted text-xs mt-1 mb-3">
+        距離・傾斜・コース難易度を個人データ内で補正。低いほど良い
+      </Text>
+      {data.length > 0 ? data.map((stat, index) => (
+        <View key={stat.putterName} className="py-3 border-t border-border">
+          <View className="flex-row justify-between items-center">
+            <Text className="text-foreground font-semibold flex-1" numberOfLines={1}>
+              {index + 1}. {stat.putterName}
+            </Text>
+            <Text className="text-primary text-xl font-bold">
+              {stat.adjustedAveragePutts.toFixed(2)}/H
+            </Text>
+          </View>
+          <Text className="text-muted text-xs mt-1">
+            実測 {stat.rawAveragePutts.toFixed(2)}/H ・ 個人基準比
+            {stat.versusPersonalBaseline > 0 ? "+" : ""}
+            {stat.versusPersonalBaseline.toFixed(2)} ・ n={stat.holes}H
+            {stat.holes < 18 ? "・参考" : ""}
+          </Text>
+        </View>
+      )) : (
+        <Text className="text-muted text-center py-4">データなし</Text>
+      )}
+    </View>
   );
 }
 
