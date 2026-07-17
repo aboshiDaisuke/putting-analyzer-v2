@@ -125,11 +125,27 @@ export interface AnalyticsSummary {
   slopeLeftRightStats: SlopeLeftRightStatsItem[];
   trend: RoundTrendItem[]; // ラウンドごとの推移（日付昇順）
   lagAnalysis: LagAnalysis;
+  personalStrokesGained: PersonalStrokesGainedSummary;
   putterStats: MetadataAvgPuttsItem[];
   adjustedPutterStats: AdjustedPutterStatsItem[];
   grassTypeStats: MetadataAvgPuttsItem[];
   weatherStats: MetadataAvgPuttsItem[];
   courseStats: MetadataAvgPuttsItem[];
+}
+
+export interface PersonalStrokesGainedRound {
+  roundId: string;
+  label: string;
+  holes: number;
+  value: number;
+}
+
+export interface PersonalStrokesGainedSummary {
+  baselineHoles: number;
+  evaluatedHoles: number;
+  total: number;
+  perHole: number;
+  rounds: PersonalStrokesGainedRound[];
 }
 
 export interface AdjustedPutterStatsItem {

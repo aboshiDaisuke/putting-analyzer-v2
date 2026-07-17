@@ -11,6 +11,7 @@ import {
   isReferenceSample,
   calculateLagAnalysis,
   calculateAdjustedPutterStats,
+  calculatePersonalStrokesGained,
   analyzeByDistance,
   analyzeBySlope,
 } from "../analytics";
@@ -169,6 +170,31 @@ describe("Analytics Functions", () => {
       expect(stats).toHaveLength(2);
       expect(Math.abs(a.adjustedAveragePutts - b.adjustedAveragePutts))
         .toBeLessThan(Math.abs(a.rawAveragePutts - b.rawAveragePutts));
+    });
+
+    it("calculates leakage-free strokes gained against prior personal data", () => {
+      const makeRound = (id: string, date: string, putts: number) => {
+        const round = createRound(
+          putts * 10,
+          Array.from({ length: 10 }, () => ({
+            totalPutts: putts,
+            putts: [createPutt({ distanceMeters: 2 })],
+          })),
+        );
+        round.id = id;
+        round.date = date;
+        return round;
+      };
+      const baseline = makeRound("baseline", "2024-01-01", 2);
+      const improved = makeRound("improved", "2024-01-02", 1);
+      const declined = makeRound("declined", "2024-01-03", 3);
+
+      const result = calculatePersonalStrokesGained([declined, baseline, improved]);
+
+      expect(result.rounds).toHaveLength(2);
+      expect(result.rounds[0].roundId).toBe("improved");
+      expect(result.rounds[0].value).toBeGreaterThan(0);
+      expect(result.rounds[1].value).toBeLessThan(0);
     });
   });
 

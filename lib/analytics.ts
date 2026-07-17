@@ -12,6 +12,7 @@ import {
   PracticeInsight,
   LagAnalysis,
   AdjustedPutterStatsItem,
+  PersonalStrokesGainedSummary,
   SlopeUpDown,
   SlopeLeftRight,
   LABELS,
@@ -426,6 +427,70 @@ export function calculateLagAnalysis(rounds: Round[]): LagAnalysis {
   };
 }
 
+// 過去の自分の距離帯別平均パットを期待値とする簡易Strokes Gained。
+// 現在ラウンドを基準作成へ混ぜず、時系列で過去データだけを使う。
+export function calculatePersonalStrokesGained(
+  rounds: Round[],
+): PersonalStrokesGainedSummary {
+  const sorted = [...rounds].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+  const baselineByDistance = new Map<string, { total: number; count: number }>();
+  let baselineTotal = 0;
+  let baselineHoles = 0;
+  const results: PersonalStrokesGainedSummary["rounds"] = [];
+
+  for (const round of sorted) {
+    const observations = getPlayedHoles(round).flatMap((hole) => {
+      const firstPutt = hole.putts.find((putt) => putt.strokeNumber === 1);
+      if (!firstPutt || firstPutt.distanceMeters <= 0) return [];
+      return [{
+        distance: distanceCondition(firstPutt.distanceMeters),
+        actual: hole.totalPutts,
+      }];
+    });
+
+    if (baselineHoles >= MIN_RELIABLE_PUTT_SAMPLE && observations.length > 0) {
+      const personalAverage = baselineTotal / baselineHoles;
+      const priorHoles = 5;
+      const value = observations.reduce((sum, observation) => {
+        const bucket = baselineByDistance.get(observation.distance);
+        const expected = bucket
+          ? (bucket.total + personalAverage * priorHoles) / (bucket.count + priorHoles)
+          : personalAverage;
+        return sum + expected - observation.actual;
+      }, 0);
+      const date = new Date(round.date);
+      results.push({
+        roundId: round.id,
+        label: `${date.getMonth() + 1}/${date.getDate()}`,
+        holes: observations.length,
+        value,
+      });
+    }
+
+    // 評価後に追加し、ラウンド自身が期待値へ混ざるデータリークを防ぐ。
+    for (const observation of observations) {
+      const bucket = baselineByDistance.get(observation.distance) ?? { total: 0, count: 0 };
+      bucket.total += observation.actual;
+      bucket.count++;
+      baselineByDistance.set(observation.distance, bucket);
+      baselineTotal += observation.actual;
+      baselineHoles++;
+    }
+  }
+
+  const total = results.reduce((sum, round) => sum + round.value, 0);
+  const evaluatedHoles = results.reduce((sum, round) => sum + round.holes, 0);
+  return {
+    baselineHoles,
+    evaluatedHoles,
+    total,
+    perHole: evaluatedHoles > 0 ? total / evaluatedHoles : 0,
+    rounds: results,
+  };
+}
+
 // 記録データから、改善余地の大きい順に課題と練習メニューを返す。
 export function generatePracticeInsights(rounds: Round[]): PracticeInsight[] {
   const playedHoles = rounds.flatMap(getPlayedHoles);
@@ -523,6 +588,7 @@ export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
     slopeLeftRightStats: calculateSlopeLeftRightStats(rounds),
     trend: calculateRoundTrend(rounds),
     lagAnalysis: calculateLagAnalysis(rounds),
+    personalStrokesGained: calculatePersonalStrokesGained(rounds),
     putterStats: calculatePutterStats(rounds),
     adjustedPutterStats: calculateAdjustedPutterStats(rounds),
     grassTypeStats: calculateGrassTypeStats(rounds),

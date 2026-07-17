@@ -131,6 +131,10 @@ export default function AnalyticsScreen() {
         value: bucket.threePuttRate,
         count: bucket.attempts,
       })),
+      strokesGained: summary.personalStrokesGained.rounds.map((round) => ({
+        label: round.label,
+        value: round.value,
+      })),
     };
   }, [summary]);
 
@@ -280,6 +284,55 @@ export default function AnalyticsScreen() {
               yMin={0}
               yMax={100}
             />
+          </View>
+
+          {/* 過去の自分を基準にした簡易SG */}
+          <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+            <Text className="text-lg font-semibold text-foreground">個人基準・簡易SG</Text>
+            <Text className="text-muted text-xs mt-1">
+              過去の距離帯別平均と比較。プラスほど普段の自分より良い
+            </Text>
+            {summary.personalStrokesGained.evaluatedHoles > 0 ? (
+              <>
+                <View className="flex-row mt-4 mb-2">
+                  <View className="flex-1">
+                    <Text className="text-muted text-xs">選択期間の合計</Text>
+                    <Text
+                      style={{
+                        color: summary.personalStrokesGained.total >= 0
+                          ? colors.success
+                          : colors.error,
+                        fontSize: 26,
+                        fontWeight: "700",
+                      }}
+                    >
+                      {summary.personalStrokesGained.total >= 0 ? "+" : ""}
+                      {summary.personalStrokesGained.total.toFixed(2)}
+                    </Text>
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-muted text-xs">1ホールあたり</Text>
+                    <Text className="text-foreground text-2xl font-bold">
+                      {summary.personalStrokesGained.perHole >= 0 ? "+" : ""}
+                      {summary.personalStrokesGained.perHole.toFixed(3)}
+                    </Text>
+                  </View>
+                </View>
+                <LineChart
+                  data={chartData.strokesGained}
+                  color={colors.accent}
+                  unit=""
+                  decimals={2}
+                />
+                <Text className="text-muted text-xs">
+                  評価対象 {summary.personalStrokesGained.evaluatedHoles}H
+                </Text>
+              </>
+            ) : (
+              <Text className="text-muted text-center py-5">
+                距離付きデータを10ホール以上記録すると、次のラウンドから表示されます
+              </Text>
+            )}
           </View>
 
           {/* ── グループA: パット技術 ── */}
