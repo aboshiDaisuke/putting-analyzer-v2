@@ -36,6 +36,12 @@ const SPEED_RANGES = [
 ];
 
 export type AnalyticsPeriod = 'week' | 'month' | 'year' | 'all';
+export const MIN_RELIABLE_PUTT_SAMPLE = 10;
+export const MIN_RELIABLE_ROUND_SAMPLE = 3;
+
+export function isReferenceSample(sampleSize: number, minimum: number): boolean {
+  return sampleSize < minimum;
+}
 
 // DB/API変換後のラウンドは未入力ホールも totalPutts=0 で保持するため、
 // 分析の分母には実際にパットが入力されたホールだけを使う。

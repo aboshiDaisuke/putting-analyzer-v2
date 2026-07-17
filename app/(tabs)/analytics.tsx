@@ -26,6 +26,9 @@ import {
   calculateAnalyticsSummary,
   generatePracticeInsights,
   getPeriodCutoffDate,
+  getPlayedHoles,
+  MIN_RELIABLE_PUTT_SAMPLE,
+  MIN_RELIABLE_ROUND_SAMPLE,
 } from "@/lib/analytics";
 import { Round, MetadataAvgPuttsItem, LABELS } from "@/lib/types";
 
@@ -92,6 +95,10 @@ export default function AnalyticsScreen() {
 
   const summary = useMemo(() => calculateAnalyticsSummary(rounds), [rounds]);
   const practiceInsights = useMemo(() => generatePracticeInsights(rounds), [rounds]);
+  const playedHoleCount = useMemo(
+    () => rounds.reduce((sum, round) => sum + getPlayedHoles(round).length, 0),
+    [rounds],
+  );
 
   // チャート用データ配列を summary 単位で1回だけ生成（毎レンダーの再 map と
   // 新規参照によるチャートの再描画を防ぐ）。
@@ -158,6 +165,23 @@ export default function AnalyticsScreen() {
 
           <PeriodSelector period={period} onSelect={setPeriod} />
 
+          {playedHoleCount < MIN_RELIABLE_PUTT_SAMPLE && (
+            <View
+              className="rounded-xl p-3 border"
+              style={{
+                backgroundColor: colors.warning + "14",
+                borderColor: colors.warning + "55",
+              }}
+            >
+              <Text style={{ color: colors.warning, fontWeight: "600" }}>
+                参考値：現在のサンプルは{playedHoleCount}ホールです
+              </Text>
+              <Text className="text-muted text-xs mt-1">
+                {MIN_RELIABLE_PUTT_SAMPLE}ホール以上で傾向の信頼性が高まります
+              </Text>
+            </View>
+          )}
+
           {/* サマリーカード（常時表示） */}
           <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
             <Text className="text-lg font-semibold text-foreground mb-4">
@@ -217,6 +241,11 @@ export default function AnalyticsScreen() {
                   <View style={{ flex: 1 }}>
                     <Text className="text-foreground font-semibold">{insight.title}</Text>
                     <Text className="text-muted text-xs mt-1">{insight.summary}</Text>
+                    {insight.sampleSize < MIN_RELIABLE_PUTT_SAMPLE && (
+                      <Text style={{ color: colors.warning, fontSize: 11, marginTop: 3 }}>
+                        サンプル少数・参考値
+                      </Text>
+                    )}
                     <Text className="text-foreground text-sm mt-2">練習：{insight.practice}</Text>
                   </View>
                 </View>
@@ -267,6 +296,7 @@ export default function AnalyticsScreen() {
                 color={colors.primary}
                 maxValue={100}
                 unit="%"
+                referenceThreshold={MIN_RELIABLE_PUTT_SAMPLE}
               />
             </View>
 
@@ -280,6 +310,7 @@ export default function AnalyticsScreen() {
                 color={colors.accent}
                 maxValue={100}
                 unit="%"
+                referenceThreshold={MIN_RELIABLE_PUTT_SAMPLE}
               />
             </View>
 
@@ -293,6 +324,7 @@ export default function AnalyticsScreen() {
                 color={colors.accent}
                 maxValue={100}
                 unit="%"
+                referenceThreshold={MIN_RELIABLE_PUTT_SAMPLE}
               />
             </View>
           </SectionGroup>
@@ -316,6 +348,7 @@ export default function AnalyticsScreen() {
                 color={colors.primary}
                 unit="/H"
                 decimals={2}
+                referenceThreshold={MIN_RELIABLE_ROUND_SAMPLE}
               />
             </View>
 
@@ -477,7 +510,7 @@ function MetadataSection({
                   </Text>
                   <Text className="text-muted text-sm ml-1">/H</Text>
                   <Text className="text-muted text-xs ml-2">
-                    ({stat.rounds}R)
+                    ({stat.rounds}R{stat.rounds < MIN_RELIABLE_ROUND_SAMPLE ? "・参考" : ""})
                   </Text>
                 </View>
               </View>

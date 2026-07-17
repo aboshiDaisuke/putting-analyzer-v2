@@ -87,6 +87,7 @@ function BarChartImpl({
   unit = "",
   decimals = 0,
   height = 200,
+  referenceThreshold,
 }: {
   data: BarDatum[];
   color: string;
@@ -94,6 +95,7 @@ function BarChartImpl({
   unit?: string;
   decimals?: number;
   height?: number;
+  referenceThreshold?: number;
 }) {
   const colors = useColors();
   const { width, onLayout } = useChartWidth();
@@ -172,7 +174,11 @@ function BarChartImpl({
                     fontSize={8}
                     textAnchor="middle"
                   >
-                    {`n=${d.count}`}
+                    {`n=${d.count}${
+                      referenceThreshold !== undefined && d.count < referenceThreshold
+                        ? "・参考"
+                        : ""
+                    }`}
                   </SvgText>
                 )}
               </React.Fragment>

@@ -8,6 +8,7 @@ import {
   calculateRoundTrend,
   getPeriodCutoffDate,
   generatePracticeInsights,
+  isReferenceSample,
   analyzeByDistance,
   analyzeBySlope,
 } from "../analytics";
@@ -115,6 +116,11 @@ describe("Analytics Functions", () => {
       expect(insights).toHaveLength(3);
       expect(insights[0].priority).toBeGreaterThanOrEqual(insights[1].priority);
       expect(insights.every((item) => item.practice.length > 0)).toBe(true);
+    });
+
+    it("marks samples below the configured minimum as reference values", () => {
+      expect(isReferenceSample(9, 10)).toBe(true);
+      expect(isReferenceSample(10, 10)).toBe(false);
     });
   });
 
