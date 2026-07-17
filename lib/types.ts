@@ -172,6 +172,15 @@ export interface RoundTrendItem {
   onePuttRate: number; // 1パット率(%)
 }
 
+export interface PracticeInsight {
+  id: string;
+  title: string;
+  summary: string;
+  practice: string;
+  sampleSize: number;
+  priority: number;
+}
+
 // ローカルストレージのキー
 export const STORAGE_KEYS = {
   USER_PROFILE: 'putting_analyzer_user_profile',

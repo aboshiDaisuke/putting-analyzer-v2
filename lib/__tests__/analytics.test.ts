@@ -7,6 +7,7 @@ import {
   calculateAnalyticsSummary,
   calculateRoundTrend,
   getPeriodCutoffDate,
+  generatePracticeInsights,
   analyzeByDistance,
   analyzeBySlope,
 } from "../analytics";
@@ -97,6 +98,23 @@ describe("Analytics Functions", () => {
       expect(getPeriodCutoffDate("all", now)).toBeNull();
       expect(getPeriodCutoffDate("month", now)).toEqual(new Date(2026, 5, 17));
       expect(getPeriodCutoffDate("year", now)).toEqual(new Date(2025, 6, 17));
+    });
+
+    it("returns three prioritized issues with actionable practice menus", () => {
+      const round = createRound(12, [
+        { totalPutts: 3 },
+        { totalPutts: 3 },
+        { totalPutts: 2 },
+        { totalPutts: 2 },
+        { totalPutts: 1 },
+        { totalPutts: 1 },
+      ]);
+
+      const insights = generatePracticeInsights([round]);
+
+      expect(insights).toHaveLength(3);
+      expect(insights[0].priority).toBeGreaterThanOrEqual(insights[1].priority);
+      expect(insights.every((item) => item.practice.length > 0)).toBe(true);
     });
   });
 

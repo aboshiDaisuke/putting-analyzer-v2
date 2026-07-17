@@ -9,6 +9,7 @@ import {
   SlopeLeftRightStatsItem,
   MetadataAvgPuttsItem,
   RoundTrendItem,
+  PracticeInsight,
   SlopeUpDown,
   SlopeLeftRight,
   LABELS,
@@ -283,6 +284,87 @@ export function calculateRoundTrend(rounds: Round[]): RoundTrendItem[] {
         onePuttRate: (onePuttHoles / holeCount) * 100,
       }];
     });
+}
+
+// 記録データから、改善余地の大きい順に課題と練習メニューを返す。
+export function generatePracticeInsights(rounds: Round[]): PracticeInsight[] {
+  const playedHoles = rounds.flatMap(getPlayedHoles);
+  if (playedHoles.length === 0) return [];
+
+  const candidates: PracticeInsight[] = [];
+  const threePuttHoles = playedHoles.filter((hole) => hole.totalPutts >= 3).length;
+  const threePuttRate = (threePuttHoles / playedHoles.length) * 100;
+  candidates.push({
+    id: "three-putt",
+    title: "3パットを減らす",
+    summary: `3パット率 ${threePuttRate.toFixed(1)}%（${threePuttHoles}/${playedHoles.length}H）`,
+    practice: "10〜15mから1m以内へ止める距離感ドリルを10球×3セット",
+    sampleSize: playedHoles.length,
+    priority: threePuttRate * 1.4,
+  });
+
+  const distanceStats = calculateDistanceStats(rounds).filter((stat) => stat.attempts > 0);
+  if (distanceStats.length > 0) {
+    const weakest = [...distanceStats].sort(
+      (a, b) => a.rate - b.rate || b.attempts - a.attempts,
+    )[0];
+    candidates.push({
+      id: "distance",
+      title: `${weakest.range}の決定率を上げる`,
+      summary: `カップイン率 ${weakest.rate.toFixed(1)}%（n=${weakest.attempts}）`,
+      practice: `${weakest.range}から傾斜を変えて5球ずつ、合計30球のカップイン練習`,
+      sampleSize: weakest.attempts,
+      priority: 100 - weakest.rate,
+    });
+  } else {
+    candidates.push({
+      id: "record-distance",
+      title: "1stパット距離を記録する",
+      summary: "距離別の判定に必要なデータがまだありません",
+      practice: "次のラウンドでは各ホールの1stパット距離を優先して記録",
+      sampleSize: 0,
+      priority: 35,
+    });
+  }
+
+  const slopeCandidates = [
+    ...calculateSlopeStats(rounds).map((stat) => ({
+      id: `slope-ud-${stat.slope}`,
+      label: LABELS.slopeUpDown[stat.slope],
+      ...stat,
+    })),
+    ...calculateSlopeLeftRightStats(rounds).map((stat) => ({
+      id: `slope-lr-${stat.slope}`,
+      label: LABELS.slopeLeftRight[stat.slope],
+      ...stat,
+    })),
+  ].filter((stat) => stat.attempts > 0);
+
+  if (slopeCandidates.length > 0) {
+    const weakest = [...slopeCandidates].sort(
+      (a, b) => a.rate - b.rate || b.attempts - a.attempts,
+    )[0];
+    candidates.push({
+      id: weakest.id,
+      title: `${weakest.label}ラインを強化する`,
+      summary: `カップイン率 ${weakest.rate.toFixed(1)}%（n=${weakest.attempts}）`,
+      practice: `${weakest.label}ラインにゲートを2か所置き、スタート方向を確認しながら20球`,
+      sampleSize: weakest.attempts,
+      priority: (100 - weakest.rate) * 0.9,
+    });
+  }
+
+  const onePuttRate = calculateOnePuttRate(rounds);
+  candidates.push({
+    id: "one-putt",
+    title: "1パットで決め切る",
+    summary: `1パット率 ${onePuttRate.toFixed(1)}%`,
+    practice: "1〜2mを時計方向8地点から連続成功するまで繰り返すサークルドリル",
+    sampleSize: playedHoles.length,
+    priority: (100 - onePuttRate) * 0.65,
+  });
+
+  return candidates.sort((a, b) => b.priority - a.priority).slice(0, 3);
 }
 
 // 総合分析サマリー

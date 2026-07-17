@@ -24,6 +24,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 }
 import {
   calculateAnalyticsSummary,
+  generatePracticeInsights,
   getPeriodCutoffDate,
 } from "@/lib/analytics";
 import { Round, MetadataAvgPuttsItem, LABELS } from "@/lib/types";
@@ -90,6 +91,7 @@ export default function AnalyticsScreen() {
   );
 
   const summary = useMemo(() => calculateAnalyticsSummary(rounds), [rounds]);
+  const practiceInsights = useMemo(() => generatePracticeInsights(rounds), [rounds]);
 
   // チャート用データ配列を summary 単位で1回だけ生成（毎レンダーの再 map と
   // 新規参照によるチャートの再描画を防ぐ）。
@@ -186,6 +188,41 @@ export default function AnalyticsScreen() {
               />
             </View>
           </View>
+
+          {/* データから導く次のアクション */}
+          {practiceInsights.length > 0 && (
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground">今回の課題トップ3</Text>
+              <Text className="text-muted text-sm mt-1 mb-3">
+                記録データから改善余地の大きい順に提案します
+              </Text>
+              {practiceInsights.map((insight, index) => (
+                <View
+                  key={insight.id}
+                  className="py-3 border-t border-border"
+                  style={{ flexDirection: "row", gap: 12 }}
+                >
+                  <View
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 14,
+                      backgroundColor: colors.primary,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text style={{ color: "white", fontWeight: "700" }}>{index + 1}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text className="text-foreground font-semibold">{insight.title}</Text>
+                    <Text className="text-muted text-xs mt-1">{insight.summary}</Text>
+                    <Text className="text-foreground text-sm mt-2">練習：{insight.practice}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* スコア推移（時系列・常時表示） */}
           <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
