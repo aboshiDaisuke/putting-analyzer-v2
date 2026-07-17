@@ -10,6 +10,7 @@ import {
   MetadataAvgPuttsItem,
   RoundTrendItem,
   PracticeInsight,
+  LagAnalysis,
   SlopeUpDown,
   SlopeLeftRight,
   LABELS,
@@ -292,6 +293,53 @@ export function calculateRoundTrend(rounds: Round[]): RoundTrendItem[] {
     });
 }
 
+// 2ndパットの distPrev は1stパット後の残り距離（yd）。これを使って
+// ロングパットの寄せ距離と3パット発生率の関係を分析する。
+export function calculateLagAnalysis(rounds: Round[]): LagAnalysis {
+  const outcomes = rounds.flatMap((round) =>
+    getPlayedHoles(round).flatMap((hole) => {
+      const secondPutt = hole.putts.find((putt) => putt.strokeNumber === 2);
+      if (!secondPutt?.distPrev || secondPutt.distPrev <= 0) return [];
+      return [{
+        leaveMeters: secondPutt.distPrev * 0.9144,
+        threePutt: hole.totalPutts >= 3,
+      }];
+    }),
+  );
+
+  const ranges = [
+    { min: 0, max: 0.5, label: "〜0.5m" },
+    { min: 0.5, max: 1, label: "0.5〜1m" },
+    { min: 1, max: 2, label: "1〜2m" },
+    { min: 2, max: Infinity, label: "2m〜" },
+  ];
+  const threePutts = outcomes.filter((outcome) => outcome.threePutt);
+  const longLeaves = outcomes.filter((outcome) => outcome.leaveMeters >= 1);
+
+  return {
+    recordedHoles: outcomes.length,
+    averageLeaveMeters: outcomes.length > 0
+      ? outcomes.reduce((sum, outcome) => sum + outcome.leaveMeters, 0) / outcomes.length
+      : 0,
+    threePuttAverageLeaveMeters: threePutts.length > 0
+      ? threePutts.reduce((sum, outcome) => sum + outcome.leaveMeters, 0) / threePutts.length
+      : 0,
+    longLeaveRate: outcomes.length > 0 ? (longLeaves.length / outcomes.length) * 100 : 0,
+    buckets: ranges.map((range) => {
+      const matches = outcomes.filter(
+        (outcome) => outcome.leaveMeters >= range.min && outcome.leaveMeters < range.max,
+      );
+      const count = matches.filter((outcome) => outcome.threePutt).length;
+      return {
+        range: range.label,
+        attempts: matches.length,
+        threePutts: count,
+        threePuttRate: matches.length > 0 ? (count / matches.length) * 100 : 0,
+      };
+    }),
+  };
+}
+
 // 記録データから、改善余地の大きい順に課題と練習メニューを返す。
 export function generatePracticeInsights(rounds: Round[]): PracticeInsight[] {
   const playedHoles = rounds.flatMap(getPlayedHoles);
@@ -388,6 +436,7 @@ export function calculateAnalyticsSummary(rounds: Round[]): AnalyticsSummary {
     greenSpeedStats: calculateGreenSpeedStats(rounds),
     slopeLeftRightStats: calculateSlopeLeftRightStats(rounds),
     trend: calculateRoundTrend(rounds),
+    lagAnalysis: calculateLagAnalysis(rounds),
     putterStats: calculatePutterStats(rounds),
     grassTypeStats: calculateGrassTypeStats(rounds),
     weatherStats: calculateWeatherStats(rounds),

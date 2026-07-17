@@ -126,6 +126,11 @@ export default function AnalyticsScreen() {
         value: s.averagePutts,
         count: s.rounds,
       })),
+      lag: summary.lagAnalysis.buckets.map((bucket) => ({
+        label: bucket.range,
+        value: bucket.threePuttRate,
+        count: bucket.attempts,
+      })),
     };
   }, [summary]);
 
@@ -283,7 +288,7 @@ export default function AnalyticsScreen() {
             groupKey="technique"
             expanded={expandedGroups.technique}
             onToggle={toggleGroup}
-            sectionCount={3}
+            sectionCount={4}
             colors={colors}
           >
             {/* 距離別成功率 */}
@@ -326,6 +331,45 @@ export default function AnalyticsScreen() {
                 unit="%"
                 referenceThreshold={MIN_RELIABLE_PUTT_SAMPLE}
               />
+            </View>
+
+            {/* 1stパット後の残距離と3パット */}
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground">
+                3パット原因分析
+              </Text>
+              <Text className="text-muted text-xs mt-1 mb-3">
+                1stパット後の残り距離別3パット率
+              </Text>
+              {summary.lagAnalysis.recordedHoles > 0 ? (
+                <>
+                  <View className="flex-row mb-3">
+                    <View className="flex-1">
+                      <Text className="text-muted text-xs">平均残り距離</Text>
+                      <Text className="text-foreground text-xl font-bold">
+                        {summary.lagAnalysis.averageLeaveMeters.toFixed(2)}m
+                      </Text>
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-muted text-xs">1m以上残した率</Text>
+                      <Text className="text-foreground text-xl font-bold">
+                        {summary.lagAnalysis.longLeaveRate.toFixed(1)}%
+                      </Text>
+                    </View>
+                  </View>
+                  <BarChart
+                    data={chartData.lag}
+                    color={colors.error}
+                    maxValue={100}
+                    unit="%"
+                    referenceThreshold={MIN_RELIABLE_PUTT_SAMPLE}
+                  />
+                </>
+              ) : (
+                <Text className="text-muted text-center py-4">
+                  2ndパットのDist(prev)を記録すると分析できます
+                </Text>
+              )}
             </View>
           </SectionGroup>
 

@@ -9,6 +9,7 @@ import {
   getPeriodCutoffDate,
   generatePracticeInsights,
   isReferenceSample,
+  calculateLagAnalysis,
   analyzeByDistance,
   analyzeBySlope,
 } from "../analytics";
@@ -121,6 +122,32 @@ describe("Analytics Functions", () => {
     it("marks samples below the configured minimum as reference values", () => {
       expect(isReferenceSample(9, 10)).toBe(true);
       expect(isReferenceSample(10, 10)).toBe(false);
+    });
+
+    it("analyzes three-putt risk from first-putt leave distance", () => {
+      const round = createRound(5, [
+        {
+          totalPutts: 3,
+          putts: [
+            createPutt({ strokeNumber: 1 }),
+            createPutt({ strokeNumber: 2, distPrev: 2 }),
+            createPutt({ strokeNumber: 3, cupIn: true }),
+          ],
+        },
+        {
+          totalPutts: 2,
+          putts: [
+            createPutt({ strokeNumber: 1 }),
+            createPutt({ strokeNumber: 2, distPrev: 1, cupIn: true }),
+          ],
+        },
+      ]);
+
+      const lag = calculateLagAnalysis([round]);
+
+      expect(lag.recordedHoles).toBe(2);
+      expect(lag.averageLeaveMeters).toBeCloseTo(1.3716);
+      expect(lag.buckets.find((bucket) => bucket.range === "1〜2m")?.threePuttRate).toBe(100);
     });
   });
 

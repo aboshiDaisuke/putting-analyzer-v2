@@ -124,10 +124,26 @@ export interface AnalyticsSummary {
   greenSpeedStats: GreenSpeedStats[];
   slopeLeftRightStats: SlopeLeftRightStatsItem[];
   trend: RoundTrendItem[]; // ラウンドごとの推移（日付昇順）
+  lagAnalysis: LagAnalysis;
   putterStats: MetadataAvgPuttsItem[];
   grassTypeStats: MetadataAvgPuttsItem[];
   weatherStats: MetadataAvgPuttsItem[];
   courseStats: MetadataAvgPuttsItem[];
+}
+
+export interface LagDistanceBucket {
+  range: string;
+  attempts: number;
+  threePutts: number;
+  threePuttRate: number;
+}
+
+export interface LagAnalysis {
+  recordedHoles: number;
+  averageLeaveMeters: number;
+  threePuttAverageLeaveMeters: number;
+  longLeaveRate: number;
+  buckets: LagDistanceBucket[];
 }
 
 export interface DistanceStats {
