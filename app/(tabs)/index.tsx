@@ -4,7 +4,7 @@ import { useFocusEffect } from "@react-navigation/native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { HomeDashboard } from "@/components/home-dashboard";
-import { getRounds, getUserProfile } from "@/lib/storage";
+import { getRoundsWithHoles, getUserProfile } from "@/lib/storage";
 import { Round, UserProfile } from "@/lib/types";
 
 export default function HomeScreen() {
@@ -17,7 +17,7 @@ export default function HomeScreen() {
     // 認証は (tabs)/_layout のガードで解決済み。ここでは取得失敗のみ握りつぶす。
     try {
       const [roundsData, profileData] = await Promise.all([
-        getRounds(),
+        getRoundsWithHoles(),
         getUserProfile(),
       ]);
       setRounds(roundsData);

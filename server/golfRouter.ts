@@ -93,6 +93,7 @@ const puttInputSchema = z.object({
 
 const holeInputSchema = z.object({
   holeNumber: z.number().int().min(1).max(18),
+  scoreResult: scoreResultSchema.default("par"),
   totalPutts: z.number().int().min(0).optional(),
   putts: z.array(puttInputSchema).max(3).optional(),
 });
@@ -403,9 +404,10 @@ export const holesRouter = router({
 
       const savedHoles = await Promise.all(
         input.holes.map(async (holeInput) => {
-          const { holeNumber, totalPutts, putts: puttsInput } = holeInput;
+          const { holeNumber, scoreResult, totalPutts, putts: puttsInput } = holeInput;
 
           const hole = await upsertHole(input.roundId, holeNumber, {
+            scoreResult,
             totalPutts: totalPutts ?? 0,
           });
 

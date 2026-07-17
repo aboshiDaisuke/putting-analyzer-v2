@@ -16,6 +16,7 @@ import {
   calculateOnePuttRate,
   calculateThreePuttRate,
   formatDate,
+  getPlayedHoles,
 } from "@/lib/analytics";
 import { Round, UserProfile } from "@/lib/types";
 
@@ -35,8 +36,9 @@ const WHITE_15 = "rgba(255,255,255,0.14)";
 
 /** 1ホールあたり平均パット（プレー済みのみ）。プレーしていなければ null。 */
 function avgPuttsPerHole(round: Round): number | null {
-  const holes = round.holes?.length ?? 0;
-  return holes > 0 ? round.totalPutts / holes : null;
+  const holes = getPlayedHoles(round);
+  const totalPutts = holes.reduce((sum, hole) => sum + hole.totalPutts, 0);
+  return holes.length > 0 ? totalPutts / holes.length : null;
 }
 
 export function HomeDashboard({
@@ -56,12 +58,12 @@ export function HomeDashboard({
   const recentRounds = rounds.slice(0, 3);
 
   // プレー済みラウンド（rounds は日付降順）。ベスト・推移の算出に使う。
-  const playedRounds = rounds.filter((r) => (r.holes?.length ?? 0) > 0);
+  const playedRounds = rounds.filter((r) => getPlayedHoles(r).length > 0);
 
   // ベスト = 1ホールあたり最少パット（ホール数の違いに左右されない公平な指標）
   const bestPerHole =
     playedRounds.length > 0
-      ? Math.min(...playedRounds.map((r) => r.totalPutts / r.holes.length))
+      ? Math.min(...playedRounds.map((r) => avgPuttsPerHole(r) ?? Infinity))
       : null;
 
   // 推移（古い→新しい、直近8ラウンド）と前回比

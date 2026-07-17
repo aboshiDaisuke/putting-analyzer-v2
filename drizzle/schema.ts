@@ -174,6 +174,7 @@ export const holes = pgTable("holes", {
     .notNull()
     .references(() => rounds.id, { onDelete: "cascade" }),
   holeNumber: integer("holeNumber").notNull(), // 1-18
+  scoreResult: scoreResultEnum("scoreResult").default("par").notNull(),
   totalPutts: integer("totalPutts").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

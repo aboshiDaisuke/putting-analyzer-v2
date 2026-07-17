@@ -158,6 +158,7 @@ interface DbHole {
   id: number;
   roundId: number;
   holeNumber: number;
+  scoreResult: string | null;
   totalPutts: number | null;
   createdAt: string | Date;
   updatedAt: string | Date;
@@ -240,7 +241,7 @@ function dbPuttToClient(db: DbPutt): PuttData {
 function dbHoleToClient(db: DbHole): HoleData {
   return {
     holeNumber: db.holeNumber,
-    scoreResult: "par", // scoreResult is not stored in DB; default to "par"
+    scoreResult: (db.scoreResult as HoleData["scoreResult"]) ?? "par",
     totalPutts: db.totalPutts ?? 0,
     putts: (db.putts ?? []).map(dbPuttToClient),
   };
@@ -688,6 +689,7 @@ export async function saveHolesForRound(
   // Map client HoleData → the shape expected by holes.upsertHoles
   const holesInput = holes.map((hole) => ({
     holeNumber: hole.holeNumber,
+    scoreResult: hole.scoreResult,
     totalPutts: hole.totalPutts,
     putts: hole.putts.map((putt) => ({
       strokeNumber: putt.strokeNumber,

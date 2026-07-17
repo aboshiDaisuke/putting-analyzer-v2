@@ -9,7 +9,7 @@ import { useColors } from "@/hooks/use-colors";
 import { cardShadow } from "@/lib/card-shadow";
 import { hapticSuccess } from "@/lib/haptics";
 import { getRound, deleteRound, resetRoundHoles } from "@/lib/storage";
-import { formatDate } from "@/lib/analytics";
+import { formatDate, getPlayedHoles } from "@/lib/analytics";
 import { Round, LABELS } from "@/lib/types";
 
 export default function RoundDetailScreen() {
@@ -80,9 +80,11 @@ export default function RoundDetailScreen() {
     );
   }
 
-  const avgPutts = round.totalPutts / round.holes.length;
-  const onePuttCount = round.holes.filter((h) => h.totalPutts === 1).length;
-  const threePuttCount = round.holes.filter((h) => h.totalPutts >= 3).length;
+  const playedHoles = getPlayedHoles(round);
+  const playedTotalPutts = playedHoles.reduce((sum, hole) => sum + hole.totalPutts, 0);
+  const avgPutts = playedHoles.length > 0 ? playedTotalPutts / playedHoles.length : 0;
+  const onePuttCount = playedHoles.filter((h) => h.totalPutts === 1).length;
+  const threePuttCount = playedHoles.filter((h) => h.totalPutts >= 3).length;
 
   return (
     <ScreenContainer edges={["top", "left", "right", "bottom"]}>
@@ -153,7 +155,7 @@ export default function RoundDetailScreen() {
             パフォーマンス
           </Text>
           <View className="flex-row justify-between">
-            <SummaryItem label="総パット" value={round.totalPutts.toString()} />
+            <SummaryItem label="総パット" value={playedTotalPutts.toString()} />
             <SummaryItem label="平均" value={avgPutts.toFixed(2)} unit="/H" />
             <SummaryItem
               label="1パット"
