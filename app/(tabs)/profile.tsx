@@ -28,6 +28,8 @@ import {
 } from "@/lib/storage";
 import { UserProfile, Putter, GolfCourse, LABELS } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
+import { getRoundsWithHoles } from "@/lib/storage";
+import { buildRoundsCsv, deliverCsv } from "@/lib/export-csv";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -44,6 +46,7 @@ export default function ProfileScreen() {
   const [showDeleteCourseConfirm, setShowDeleteCourseConfirm] = useState<string | null>(null);
   const [showDeleteAllRoundsConfirm, setShowDeleteAllRoundsConfirm] = useState(false);
   const [isDeletingAllRounds, setIsDeletingAllRounds] = useState(false);
+  const [exportState, setExportState] = useState<"idle" | "busy" | "done" | "empty" | "error">("idle");
 
   const loadData = useCallback(async () => {
     const [profileData, puttersData, coursesData] = await Promise.all([
@@ -95,6 +98,23 @@ export default function ProfileScreen() {
     hapticSuccess();
     setShowDeleteCourseConfirm(null);
     loadData();
+  };
+
+  const handleExportCsv = async () => {
+    setExportState("busy");
+    try {
+      const rounds = await getRoundsWithHoles();
+      if (rounds.length === 0) {
+        setExportState("empty");
+        return;
+      }
+      await deliverCsv(buildRoundsCsv(rounds));
+      hapticSuccess();
+      setExportState("done");
+    } catch (e) {
+      console.error("[profile] export csv failed:", e);
+      setExportState("error");
+    }
   };
 
   const handleConfirmDeleteAllRounds = async () => {
@@ -348,6 +368,39 @@ export default function ProfileScreen() {
               ) : (
                 <Text className="text-muted text-center py-4">
                   コースが登録されていません
+                </Text>
+              )}
+            </View>
+
+            {/* データのエクスポート */}
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground mb-1">データ</Text>
+              <Text className="text-muted text-sm mb-3">
+                全ラウンドのパット記録を1行1パットのCSVで書き出します（Excel対応）。
+              </Text>
+              <TouchableOpacity
+                onPress={handleExportCsv}
+                disabled={exportState === "busy"}
+                className="bg-primary/10 border border-primary rounded-xl px-4 py-3 flex-row items-center justify-center gap-2"
+                style={{ opacity: exportState === "busy" ? 0.6 : 1 }}
+                activeOpacity={0.7}
+              >
+                <IconSymbol name="list.bullet" size={18} color={colors.primary} />
+                <Text className="text-primary font-medium">
+                  {exportState === "busy" ? "書き出し中..." : "CSVでエクスポート"}
+                </Text>
+              </TouchableOpacity>
+              {exportState === "done" && (
+                <Text style={{ color: colors.success, fontSize: 12, marginTop: 8, textAlign: "center" }}>
+                  書き出しました
+                </Text>
+              )}
+              {exportState === "empty" && (
+                <Text className="text-muted text-xs mt-2 text-center">ラウンドデータがありません</Text>
+              )}
+              {exportState === "error" && (
+                <Text style={{ color: colors.error, fontSize: 12, marginTop: 8, textAlign: "center" }}>
+                  書き出しに失敗しました
                 </Text>
               )}
             </View>
