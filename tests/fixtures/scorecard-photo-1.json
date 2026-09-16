@@ -1,0 +1,37 @@
+{
+  "hole": "07",
+  "date": "20260916",
+  "course": "Fable GC",
+  "sections": [
+    {
+      "cupIn": false,
+      "result": 2,
+      "length": "12",
+      "lineUD": 1,
+      "lineLR": 0,
+      "styles": {
+        "result": "check",
+        "lineUD": "fill",
+        "lineLR": "circle"
+      }
+    },
+    {
+      "cupIn": true,
+      "result": null,
+      "length": "3",
+      "lineUD": 2,
+      "lineLR": 2,
+      "styles": {
+        "lineUD": "check",
+        "lineLR": "check"
+      }
+    },
+    {
+      "cupIn": false,
+      "result": null,
+      "length": null,
+      "lineUD": null,
+      "lineLR": null
+    }
+  ]
+}
