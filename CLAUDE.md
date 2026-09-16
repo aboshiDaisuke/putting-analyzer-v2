@@ -7,56 +7,35 @@
 - ドラフトPR: https://github.com/aboshiDaisuke/putting-analyzer-v2/pull/1
 - Supabase project ref: `ijrrzinlhqhinlmzunzn` (`putting-analyzer`)
 - 本番: https://putting-analyzer-v2.vercel.app/
-- 直近確認時点でVercel、本番トップ、本番 `/api/health` は正常
-- 作業内容は最新コミット `ac2c98e` までプッシュ済み
+- **2026-09-16 時点で Supabase プロジェクトが自動 pause 中**（free プランの1週間非アクティブ）。
+  本番 `/api/health` は `db: failed`、Auth も応答なし。Dashboard から Restore が必要。
 
-## 完了済み
+## 2026-09-16 の修正（コミット済み・未プッシュ・本番DB未適用）
 
-- パッティング分析の期間別集計、9ホール分析、推移チャートを修正
-- ホーム集計とスコア結果の永続化を修正
-- 課題トップ3、練習提案、少数サンプル表示を追加
-- 残距離による3パット原因分析を追加
-- 条件補正パター比較、個人基準の簡易SGを追加
-- `holes.scoreResult` を追加する Drizzle migration
-  `drizzle/0002_tiresome_red_ghost.sql` を本番Supabaseへ適用済み
-- 本番DBで `scoreResult` は enum型、default `par`、NOT NULL
-- 既存18ホールの `scoreResult` NULL件数は0
+- RLS 対応の migration `drizzle/0004_enable_rls.sql`（RLS 有効化 + anon/authenticated の権限取消）
+- `drizzle/0003_holes_unique_and_fk_indexes.sql`（holes の (roundId, holeNumber) ユニーク、FK 索引、重複行の事前削除）
+- ホール保存を1トランザクション化し、ラウンド合計をサーバーで再計算（`server/db.ts` `saveHoles`）
+- 手入力のメートル距離が分析に反映されない不具合、OCR のホール番号強制上書き、日付の1日ずれ、
+  一覧の平均パット分母、ネイティブ OAuth スキーム、health エンドポイントの情報露出を修正
+- 傾斜「未記入」を null で保持（フラットと区別）、ラグ分析は 2nd パットの距離を使用
+- 表示名を `users.name` に保存、認証 context にキャッシュ導入、cookie 認証経路など未使用コードを削除
 
 ## 次にやること
 
-最優先はSupabaseのRLS対応。
-
-1. アプリの認証方式とDBアクセス経路を確認する
-2. 次の7テーブルについて、利用者ごとのアクセス要件を整理する
-   - `courses`
-   - `holes`
-   - `putters`
-   - `putts`
-   - `rounds`
-   - `userProfiles`
-   - `users`
-3. RLSポリシーを設計し、マイグレーションとして追加する
-4. ローカルテスト、型チェック、lint、production buildを実行する
-5. まとまりのよい単位でコミットし、同ブランチへプッシュする
-6. 本番Supabaseへ適用し、認証あり・なしのアクセスを検証する
-7. 問題がなければドラフトPRをReadyにしてマージを検討する
+1. Supabase Dashboard でプロジェクトを Restore する
+2. `drizzle.__drizzle_migrations` の履歴を確認し、0003・0004 を適用する
+   - 履歴があれば `DATABASE_URL=... npx drizzle-kit migrate`
+   - 履歴が無ければ SQL Editor で 0003 → 0004 の順に手動実行
+   - 0004 は所有者ロール（postgres）で実行すること。適用後 `SELECT relrowsecurity FROM pg_class` で確認
+3. anon key で `https://<ref>.supabase.co/rest/v1/rounds?select=*` を叩いて 401/空になることを確認
+4. ログイン → ラウンド作成 → ホール入力 → 分析 が本番で動くことを確認
+5. 問題がなければプッシュし、ドラフトPRを Ready にする
 
 ## 重要な注意
 
-- Supabase DB Advisorで、上記7テーブルのRLS無効がcriticalとして検出された。
-- ポリシーなしでRLSだけを有効化するとアプリのDBアクセスを遮断するため、
-  `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` を単独で本番適用しないこと。
 - `.env` やアクセストークン、DBパスワードなどの秘密情報をログやコミットに出さないこと。
 - 本番DBを変更する前に現行スキーマを読み取り確認し、適用後も検証すること。
 - リポジトリにはDrizzle migrationを使用する。Supabase CLIのmigration形式へ勝手に移行しないこと。
-
-## 直近の主要コミット
-
-- `ac2c98e feat(analytics): 個人基準の簡易SGを追加`
-- `f5388cc feat(analytics): 条件補正パター比較を追加`
-- `1fcb913 feat(analytics): 残距離による3パット原因分析を追加`
-- `38447ef feat(analytics): 少数サンプルへ参考値表示を追加`
-- `75731e4 feat(analytics): 課題トップ3と練習提案を追加`
-- `09dd781 fix(analytics): ホーム集計とスコア結果の永続化を修正`
-- `f5305d5 fix(analytics): 期間別集計と9ホール分析を修正`
-
+- 外付けボリュームでは `drizzle/meta/._*`（AppleDouble）があると `drizzle-kit generate` が壊れる。
+  `find drizzle -name "._*" -delete` してから実行する。
+- `drizzle-kit generate` は `DATABASE_URL` が環境変数に無いと config で落ちる（接続はしない）。

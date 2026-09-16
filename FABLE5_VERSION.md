@@ -26,6 +26,20 @@
 - metro.config.js: 外付けボリュームのAppleDoubleファイル（._*）を除外（バンドルエラー対策）
 - vitest: 同様に ._* を除外
 
+## 2026-09-16 追加分（レビュー指摘の一括修正）
+
+- DB: `holes(roundId, holeNumber)` ユニーク制約・FK索引（0003）、RLS 有効化（0004）
+- ホール保存を1トランザクション化、ラウンド合計をサーバー側で全ホールから再計算
+- 手入力のメートル距離を `distanceMeters` に反映（距離別分析・SG・ラグ分析に載る）
+- OCR: カードのホール番号を尊重し未読分だけ補完（`assignHoleNumbers`）、日付のTZずれ解消
+- 一覧/ホームの平均パット/H の分母をプレー済みホール数に
+- 傾斜未記入を null で保持、ラグ分析は 2nd パット距離を使用
+- ネイティブ OAuth の redirect を `Linking.createURL` で生成（scheme 不一致の解消）
+- `/api/health` から DB 接続情報の露出を除去
+- 認証 context にトークン→ユーザーのキャッシュ、users の同期を1時間に1回に
+- 表示名を `users.name` に保存
+- 未使用の cookie 認証経路・`use-auth`・`server/storage.ts`・`theme-lab` 等を削除
+
 ## 起動方法
 
 ```bash
