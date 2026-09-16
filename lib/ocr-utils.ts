@@ -27,16 +27,16 @@ export interface OcrHoleData {
   putts: OcrPuttData[];
 }
 
-// Line(U/D) カード表記 → アプリ内部値
-function convertLineUD(val: "F" | "U" | "D" | null): SlopeUpDown {
-  if (!val) return "flat";
-  return CARD_TO_APP.lineUD[val] || "flat";
+// Line(U/D) カード表記 → アプリ内部値（未記入は null のまま。フラットと区別する）
+function convertLineUD(val: "F" | "U" | "D" | null): SlopeUpDown | null {
+  if (!val) return null;
+  return CARD_TO_APP.lineUD[val] ?? null;
 }
 
-// Line(L/R) カード表記 → アプリ内部値
-function convertLineLR(val: "St" | "L" | "R" | null): SlopeLeftRight {
-  if (!val) return "straight";
-  return CARD_TO_APP.lineLR[val] || "straight";
+// Line(L/R) カード表記 → アプリ内部値（未記入は null のまま。ストレートと区別する）
+function convertLineLR(val: "St" | "L" | "R" | null): SlopeLeftRight | null {
+  if (!val) return null;
+  return CARD_TO_APP.lineLR[val] ?? null;
 }
 
 // Result カード表記 → アプリ内部値
@@ -170,6 +170,31 @@ export function normalizeOcrHole(raw: unknown): OcrHoleData {
     course,
     putts,
   };
+}
+
+/**
+ * 撮影した複数カードにホール番号を割り当てる。
+ *  - カードから読めた番号（1〜18）は尊重する（後半9ホールだけの撮影などに対応）
+ *  - 読めなかった／既に使われた番号のカードは、直前のホールの次の未使用番号を補う
+ *  - 18番まで埋まったら null（レビュー画面で手動修正 or スキップ）
+ */
+export function assignHoleNumbers(results: OcrHoleData[]): OcrHoleData[] {
+  const used = new Set<number>();
+  let cursor = 0;
+  return results.map((r) => {
+    const read = typeof r.hole === "number" && r.hole >= 1 && r.hole <= 18 ? r.hole : null;
+    let hole: number | null = read !== null && !used.has(read) ? read : null;
+    if (hole === null) {
+      let candidate = cursor + 1;
+      while (candidate <= 18 && used.has(candidate)) candidate++;
+      hole = candidate <= 18 ? candidate : null;
+    }
+    if (hole !== null) {
+      used.add(hole);
+      cursor = hole;
+    }
+    return { ...r, hole };
+  });
 }
 
 /** 複数枚（または単一）のOCR生出力をまとめて正規化する。 */

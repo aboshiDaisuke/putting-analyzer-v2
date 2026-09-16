@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assignHoleNumbers,
   convertOcrPuttToAppPutt,
   convertOcrHoleToAppHole,
   convertOcrBatchToHoles,
@@ -301,5 +302,36 @@ describe("OCR Utils", () => {
       expect(out[0].hole).toBe(1);
       expect(out[1].hole).toBeNull(); // 範囲外
     });
+  });
+});
+
+describe("assignHoleNumbers", () => {
+  const card = (hole: number | null): OcrHoleData => ({
+    hole,
+    date: null,
+    course: null,
+    putts: [],
+  });
+
+  it("keeps hole numbers read from the cards (e.g. back nine only)", () => {
+    const out = assignHoleNumbers([card(10), card(11), card(12)]);
+    expect(out.map((c) => c.hole)).toEqual([10, 11, 12]);
+  });
+
+  it("fills unreadable cards with the next unused number after the previous card", () => {
+    const out = assignHoleNumbers([card(1), card(null), card(null), card(5)]);
+    expect(out.map((c) => c.hole)).toEqual([1, 2, 3, 5]);
+  });
+
+  it("treats duplicated or out-of-range numbers as unreadable", () => {
+    const out = assignHoleNumbers([card(3), card(3), card(99)]);
+    expect(out.map((c) => c.hole)).toEqual([3, 4, 5]);
+  });
+
+  it("returns null once all 18 numbers are used", () => {
+    const cards = Array.from({ length: 19 }, () => card(null));
+    const out = assignHoleNumbers(cards);
+    expect(out[17].hole).toBe(18);
+    expect(out[18].hole).toBeNull();
   });
 });

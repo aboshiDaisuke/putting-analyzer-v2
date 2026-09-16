@@ -15,7 +15,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { hapticSuccess } from "@/lib/haptics";
 import type { OcrHoleData, OcrPuttData } from "@/lib/ocr-utils";
-import { convertOcrBatchToHoles } from "@/lib/ocr-utils";
+import { assignHoleNumbers, convertOcrBatchToHoles } from "@/lib/ocr-utils";
 import { saveRound, saveHolesForRound } from "@/lib/storage";
 import type { Round } from "@/lib/types";
 
@@ -108,12 +108,9 @@ export default function OcrReviewScreen() {
         const parsed = JSON.parse(data);
         const results: OcrHoleData[] = Array.isArray(parsed) ? parsed : [parsed];
 
-        // ホール番号を撮影順（1, 2, 3...）に自動割当
-        // OCRのhole読み取りは不正確なため、順番で上書きする
-        const assigned = results.map((r, i) => ({
-          ...r,
-          hole: i + 1,
-        }));
+        // ホール番号はカードに書かれた値を尊重し、読めなかった分だけ順番で補う。
+        // 割り当て結果は各カードの Hole 欄で修正できる。
+        const assigned = assignHoleNumbers(results);
 
         setOcrResults(assigned);
       } catch (e) {
@@ -177,8 +174,8 @@ export default function OcrReviewScreen() {
 
       if (roundId) {
         // ─── 既存ラウンドにホールデータを保存 ───────────────────────────
-        // ホール保存とラウンド合計の更新を1リクエストにまとめ、部分保存を防ぐ
-        await saveHolesForRound(roundId, holes, totalPutts);
+        // 今回撮影したホールだけを上書きし、ラウンド合計はサーバーが全ホールから再計算する
+        await saveHolesForRound(roundId, holes);
         hapticSuccess();
         router.replace(`/round/${roundId}` as any);
       } else {
@@ -189,8 +186,12 @@ export default function OcrReviewScreen() {
         const dateStr = firstValid.date || "";
         const courseName = firstValid.course || "未設定";
 
+        // 日付は "YYYY-MM-DD" の文字列として組み立てる。
+        // Date → toISOString() を経由すると UTC 変換で日本時間では前日になるため使わない。
+        const toYmd = (y: number, m: number, d: number) =>
+          `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
         const now = new Date();
-        let roundDate = now.toISOString();
+        let roundDate = toYmd(now.getFullYear(), now.getMonth() + 1, now.getDate());
         if (dateStr) {
           // YYYYMMDD 形式（カード記入形式）
           const yyyymmdd = dateStr.replace(/\D/g, ""); // 数字のみ抽出
@@ -199,7 +200,7 @@ export default function OcrReviewScreen() {
             const month = parseInt(yyyymmdd.slice(4, 6), 10);
             const day = parseInt(yyyymmdd.slice(6, 8), 10);
             if (year >= 2000 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-              roundDate = new Date(year, month - 1, day).toISOString();
+              roundDate = toYmd(year, month, day);
             }
           } else {
             // フォールバック: MM/DD 形式（旧形式との互換性）
@@ -208,7 +209,7 @@ export default function OcrReviewScreen() {
               const month = parseInt(parts[0], 10);
               const day = parseInt(parts[1], 10);
               if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-                roundDate = new Date(now.getFullYear(), month - 1, day).toISOString();
+                roundDate = toYmd(now.getFullYear(), month, day);
               }
             }
           }
