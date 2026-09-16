@@ -397,7 +397,8 @@ function RoundCard({
   onPress: () => void;
   colors: ReturnType<typeof useColors>;
 }) {
-  const holesPlayed = round.holes?.length ?? 0;
+  // 分母はプレー済みホール数（API は holes を常に18枠に埋めて返すため length は使わない）
+  const holesPlayed = getPlayedHoles(round).length;
   const avgPutts = holesPlayed > 0 ? (round.totalPutts / holesPlayed).toFixed(1) : "–";
   const grassLabel =
     round.grassType === "bent" ? "ベント" : round.grassType === "korai" ? "高麗" : round.grassType;

@@ -112,8 +112,10 @@ export default function ScanCardScreen() {
           uri: photo.uri,
           base64: photo.base64,
         };
-        setCapturedImages((prev) => [...prev, newImage]);
-        setCurrentImageIndex(capturedImages.length);
+        setCapturedImages((prev) => {
+          setCurrentImageIndex(prev.length);
+          return [...prev, newImage];
+        });
         setStep("preview");
       }
     } catch (error) {
@@ -151,21 +153,22 @@ export default function ScanCardScreen() {
       }
 
       if (newImages.length > 0) {
-        setCapturedImages((prev) => [...prev, ...newImages]);
-        setCurrentImageIndex(capturedImages.length);
+        setCapturedImages((prev) => {
+          setCurrentImageIndex(prev.length);
+          return [...prev, ...newImages];
+        });
         setStep("preview");
       }
     }
   };
 
   const handleRemoveImage = (index: number) => {
-    setCapturedImages((prev) => prev.filter((_, i) => i !== index));
-    if (currentImageIndex >= capturedImages.length - 1) {
-      setCurrentImageIndex(Math.max(0, capturedImages.length - 2));
-    }
-    if (capturedImages.length <= 1) {
-      setStep("capture");
-    }
+    setCapturedImages((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      setCurrentImageIndex((cur) => Math.min(cur, Math.max(0, next.length - 1)));
+      if (next.length === 0) setStep("capture");
+      return next;
+    });
   };
 
   const handleAddMore = () => {

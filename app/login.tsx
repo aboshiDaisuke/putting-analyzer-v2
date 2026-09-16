@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
+import * as Linking from "expo-linking";
 import { supabase } from "@/lib/supabase";
 import { useColors } from "@/hooks/use-colors";
 import { ErrorBanner } from "@/components/ui/error-banner";
@@ -68,10 +69,12 @@ export default function LoginScreen() {
     setLoading(true);
     setError(null);
     try {
+      // Web: 同一オリジンの /oauth/callback。ネイティブ: app.config.ts の scheme から生成
+      // （例: puttinganalyzer://oauth/callback）。文字列を直書きするとスキーム変更時にずれる。
       const redirectTo =
-        typeof window !== "undefined"
+        Platform.OS === "web" && typeof window !== "undefined"
           ? `${window.location.origin}/oauth/callback`
-          : "putting-analyzer-v2://oauth/callback";
+          : Linking.createURL("oauth/callback");
       const { error: err } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo },
