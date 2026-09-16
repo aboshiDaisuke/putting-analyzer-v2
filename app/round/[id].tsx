@@ -8,7 +8,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { cardShadow } from "@/lib/card-shadow";
 import { hapticSuccess } from "@/lib/haptics";
-import { getRound, deleteRound, resetRoundHoles } from "@/lib/storage";
+import { getRoundWithPending, deleteRound, resetRoundHoles } from "@/lib/storage";
 import { formatDate, getPlayedHoles } from "@/lib/analytics";
 import { Round, LABELS } from "@/lib/types";
 
@@ -28,7 +28,7 @@ export default function RoundDetailScreen() {
       if (!id) return;
       setLoadError(null);
       try {
-        const data = await getRound(id);
+        const data = await getRoundWithPending(id);
         if (data) {
           setRound(data);
         } else {

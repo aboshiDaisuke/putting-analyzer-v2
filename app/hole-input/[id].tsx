@@ -16,7 +16,7 @@ import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { hapticSuccess } from "@/lib/haptics";
-import { getRound, getUserProfile, saveHolesForRound } from "@/lib/storage";
+import { getRoundWithPending, getUserProfile, saveHolesForRound } from "@/lib/storage";
 import { calculateDistance } from "@/lib/analytics";
 import {
   Round,
@@ -99,6 +99,7 @@ export default function HoleInputScreen() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [validationWarning, setValidationWarning] = useState<string | null>(null);
+  const [offlineNotice, setOfflineNotice] = useState<string | null>(null);
   const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // タイマークリーンアップ
@@ -114,7 +115,7 @@ export default function HoleInputScreen() {
       setLoadError(null);
       try {
         const [roundData, profile] = await Promise.all([
-          getRound(id),
+          getRoundWithPending(id), // オフライン保留中のホールがあれば重ねる
           getUserProfile(),
         ]);
         if (roundData) {
@@ -272,6 +273,11 @@ export default function HoleInputScreen() {
     try {
       // 全ホールを1トランザクションで保存。ラウンド合計はサーバーがDBから再計算する
       const saved = await saveHolesForRound(round.id, updatedHoles);
+      setOfflineNotice(
+        saved.queued
+          ? "電波が無いため端末に保存しました。接続が戻ると自動で送信します。"
+          : null,
+      );
 
       // Update local state with merged holes (preserve scoreResult from UI state)
       const updatedRound: Round = {
@@ -434,6 +440,26 @@ export default function HoleInputScreen() {
 
           {/* 保存エラー表示 */}
           {saveError && <ErrorBanner message={saveError} style={{ marginBottom: 16 }} />}
+
+          {/* オフライン保留の通知 */}
+          {offlineNotice && (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: colors.primary + "14",
+                borderWidth: 1,
+                borderColor: colors.primary + "55",
+                borderRadius: 8,
+                padding: 12,
+                marginBottom: 16,
+                gap: 8,
+              }}
+            >
+              <IconSymbol name="flag.fill" size={16} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontSize: 13, flex: 1 }}>{offlineNotice}</Text>
+            </View>
+          )}
 
           {/* バリデーション警告（非ブロッキング） */}
           {validationWarning && (

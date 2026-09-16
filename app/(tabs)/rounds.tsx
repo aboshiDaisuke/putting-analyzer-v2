@@ -9,7 +9,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { cardShadow } from "@/lib/card-shadow";
 import { hapticSuccess } from "@/lib/haptics";
-import { getRounds, deleteRound } from "@/lib/storage";
+import { getRounds, deleteRound, syncPendingHoleSaves } from "@/lib/storage";
 import { formatDate } from "@/lib/analytics";
 import { Round, LABELS, countPlayedHoles } from "@/lib/types";
 
@@ -21,6 +21,7 @@ export default function RoundsScreen() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   const loadRounds = useCallback(async () => {
+    await syncPendingHoleSaves().catch(() => undefined);
     const data = await getRounds();
     setRounds(data);
   }, []);

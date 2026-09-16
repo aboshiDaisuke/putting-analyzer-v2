@@ -23,6 +23,8 @@ import { Round, UserProfile } from "@/lib/types";
 type Props = {
   rounds: Round[];
   profile: UserProfile | null;
+  /** オフラインで端末に保留中のホール保存件数（ラウンド単位） */
+  pendingSaves?: number;
   refreshing: boolean;
   onRefresh: () => void;
   onNewRound: () => void;
@@ -44,6 +46,7 @@ function avgPuttsPerHole(round: Round): number | null {
 export function HomeDashboard({
   rounds,
   profile,
+  pendingSaves = 0,
   refreshing,
   onRefresh,
   onNewRound,
@@ -97,6 +100,26 @@ export function HomeDashboard({
       }
     >
       <View style={{ padding: 16, gap: 16 }}>
+        {pendingSaves > 0 && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              backgroundColor: `${colors.warning}1A`,
+              borderColor: `${colors.warning}55`,
+              borderWidth: 1,
+              borderRadius: 12,
+              padding: 12,
+            }}
+          >
+            <IconSymbol name="flag.fill" size={16} color={colors.warning} />
+            <Text style={{ color: colors.foreground, fontSize: 13, flex: 1 }}>
+              未送信の入力が{pendingSaves}ラウンド分あります。接続が戻ると自動で送信します（下に引いて再試行）。
+            </Text>
+          </View>
+        )}
+
         {/* ─── ヒーロー ─────────────────────────────────────────────── */}
         <View
           style={[
