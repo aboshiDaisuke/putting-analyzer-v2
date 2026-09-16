@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
+import { clearUserCache } from "./_core/context";
 import {
   createCourse,
   createPutter,
@@ -20,11 +21,11 @@ import {
   getRounds,
   getRoundsWithHoles,
   getUserProfile,
+  saveHoles,
   updateCourse,
   updatePutter,
   updateRound,
-  upsertHole,
-  upsertPutts,
+  updateUserName,
   upsertUserProfile,
 } from "./db";
 
@@ -101,14 +102,16 @@ const holeInputSchema = z.object({
 // ─── userProfile router ───────────────────────────────────────────────────────
 
 export const userProfileRouter = router({
+  /** 表示名は users.name に保存されているので、プロフィール行と合わせて返す。 */
   get: protectedProcedure.query(async ({ ctx }) => {
     const profile = await getUserProfile(ctx.user.id);
-    return profile ?? null;
+    return { profile: profile ?? null, name: ctx.user.name ?? null };
   }),
 
   upsert: protectedProcedure
     .input(
       z.object({
+        name: z.string().max(128).optional(),
         gender: genderSchema.optional(),
         birthDate: z.string().max(10).optional(),
         handicap: z.number().optional(),
@@ -116,7 +119,13 @@ export const userProfileRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      return upsertUserProfile(ctx.user.id, input);
+      const { name, ...profileInput } = input;
+      if (name !== undefined) {
+        await updateUserName(ctx.user.id, name.trim() || null);
+        clearUserCache(); // 次のリクエストから新しい名前を返す
+      }
+      const profile = await upsertUserProfile(ctx.user.id, profileInput);
+      return { profile, name: name !== undefined ? name.trim() || null : ctx.user.name ?? null };
     }),
 });
 
@@ -381,8 +390,9 @@ export const roundsRouter = router({
 
 export const holesRouter = router({
   /**
-   * Saves all holes (up to 18) for a round in one call.
-   * Each hole's putts are fully replaced.
+   * Saves all holes (up to 18) for a round in one transaction.
+   * Each hole's putts are fully replaced, and the round's totalPutts is
+   * recomputed on the server from every hole in the DB.
    * Verifies the round belongs to the authenticated user before writing.
    */
   upsertHoles: protectedProcedure
@@ -390,9 +400,6 @@ export const holesRouter = router({
       z.object({
         roundId: z.number().int(),
         holes: z.array(holeInputSchema).max(18),
-        // ラウンド合計パット数。指定時はホール保存と同じミューテーション内で
-        // 更新し、「ホールは保存されたが合計は古いまま」という部分保存を防ぐ。
-        roundTotalPutts: z.number().int().min(0).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -402,32 +409,28 @@ export const holesRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Round not found" });
       }
 
-      const savedHoles = await Promise.all(
-        input.holes.map(async (holeInput) => {
-          const { holeNumber, scoreResult, totalPutts, putts: puttsInput } = holeInput;
-
-          const hole = await upsertHole(input.roundId, holeNumber, {
-            scoreResult,
-            totalPutts: totalPutts ?? 0,
+      const seen = new Set<number>();
+      for (const hole of input.holes) {
+        if (seen.has(hole.holeNumber)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Hole ${hole.holeNumber} is specified more than once`,
           });
-
-          const savedPutts =
-            puttsInput && puttsInput.length > 0
-              ? await upsertPutts(hole.id, puttsInput)
-              : await upsertPutts(hole.id, []);
-
-          return { ...hole, putts: savedPutts };
-        }),
-      );
-
-      // ラウンドの totalPutts を同一リクエストで更新（部分保存の回避）。
-      if (input.roundTotalPutts !== undefined) {
-        await updateRound(input.roundId, ctx.user.id, {
-          totalPutts: input.roundTotalPutts,
-        });
+        }
+        seen.add(hole.holeNumber);
       }
 
-      return { roundId: input.roundId, holes: savedHoles };
+      const result = await saveHoles(
+        input.roundId,
+        input.holes.map((hole) => ({
+          holeNumber: hole.holeNumber,
+          scoreResult: hole.scoreResult,
+          totalPutts: hole.totalPutts ?? hole.putts?.length ?? 0,
+          putts: hole.putts ?? [],
+        })),
+      );
+
+      return { roundId: input.roundId, holes: result.holes, totalPutts: result.totalPutts };
     }),
 });
 

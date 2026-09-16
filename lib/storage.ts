@@ -35,15 +35,17 @@ export async function getUserProfile(): Promise<UserProfile | null> {
   try {
     const profile = await ApiGolf.getUserProfile();
     if (profile) {
-      // Also read local name from AsyncStorage and merge (name isn't in the DB profile)
-      try {
-        const local = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
-        if (local) {
-          const localProfile: UserProfile = JSON.parse(local);
-          if (localProfile.name) profile.name = localProfile.name;
+      // 名前はサーバー(users.name)が正。未設定なら旧バージョンで端末に保存した名前を補う。
+      if (!profile.name) {
+        try {
+          const local = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
+          if (local) {
+            const localProfile: UserProfile = JSON.parse(local);
+            if (localProfile.name) profile.name = localProfile.name;
+          }
+        } catch {
+          // Ignore AsyncStorage read errors
         }
-      } catch {
-        // Ignore AsyncStorage read errors
       }
       return profile;
     }
@@ -95,8 +97,7 @@ export async function saveUserProfile(
   // Best-effort server sync (non-fatal on failure)
   try {
     const serverProfile = await ApiGolf.saveUserProfile(profile);
-    // Keep the locally-stored name and merge server data
-    return { ...serverProfile, name: localProfile.name };
+    return { ...serverProfile, name: serverProfile.name || localProfile.name };
   } catch {
     // Server unavailable — return local data
     return localProfile;
@@ -190,9 +191,8 @@ export async function deleteAllRounds(): Promise<boolean> {
 export async function saveHolesForRound(
   roundId: string,
   holes: HoleData[],
-  roundTotalPutts?: number,
-): Promise<{ roundId: string; holes: HoleData[] }> {
-  return ApiGolf.saveHolesForRound(roundId, holes, roundTotalPutts);
+): Promise<{ roundId: string; holes: HoleData[]; totalPutts: number }> {
+  return ApiGolf.saveHolesForRound(roundId, holes);
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────

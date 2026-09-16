@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   integer,
   pgEnum,
   pgTable,
@@ -7,6 +8,7 @@ import {
   serial,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
 
@@ -113,7 +115,7 @@ export const putters = pgTable("putters", {
   ranking: rankingEnum("ranking").default("ace"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-});
+}, (t) => [index("putters_userId_idx").on(t.userId)]);
 
 export type Putter = typeof putters.$inferSelect;
 export type InsertPutter = typeof putters.$inferInsert;
@@ -129,7 +131,7 @@ export const courses = pgTable("courses", {
   location: varchar("location", { length: 256 }),
   greens: text("greens").array(), // ["A", "B"] など
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (t) => [index("courses_userId_idx").on(t.userId)]);
 
 export type Course = typeof courses.$inferSelect;
 export type InsertCourse = typeof courses.$inferInsert;
@@ -161,7 +163,7 @@ export const rounds = pgTable("rounds", {
   totalPutts: integer("totalPutts").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-});
+}, (t) => [index("rounds_userId_idx").on(t.userId)]);
 
 export type Round = typeof rounds.$inferSelect;
 export type InsertRound = typeof rounds.$inferInsert;
@@ -178,7 +180,10 @@ export const holes = pgTable("holes", {
   totalPutts: integer("totalPutts").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-});
+}, (t) => [
+  // 同じラウンドに同じホール番号は1行だけ（並行保存による重複を防ぐ）
+  uniqueIndex("holes_roundId_holeNumber_unique").on(t.roundId, t.holeNumber),
+]);
 
 export type Hole = typeof holes.$inferSelect;
 export type InsertHole = typeof holes.$inferInsert;
@@ -204,7 +209,7 @@ export const putts = pgTable("putts", {
   mental: varchar("mental", { length: 4 }), // "P", "1"-"5", "N"
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-});
+}, (t) => [index("putts_holeId_idx").on(t.holeId)]);
 
 export type Putt = typeof putts.$inferSelect;
 export type InsertPutt = typeof putts.$inferInsert;

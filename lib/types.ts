@@ -78,6 +78,8 @@ export interface Round {
   putterName: string;
   holes: HoleData[];
   totalPutts: number;
+  /** パットが入力済みのホール数。一覧APIは holes を18枠に埋めて返すため、平均の分母にはこちらを使う。 */
+  holesPlayed?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -100,8 +102,8 @@ export interface PuttData {
   lengthSteps: number | null; // カードの Length st - 歩数
   lengthMeters: number | null; // カードの Length m - メートル直入力
   distanceMeters: number; // 計算された距離（メートル）= 歩数 × 歩幅
-  lineUD: SlopeUpDown; // カードの Line(U/D): F, U, D, UD, DU
-  lineLR: SlopeLeftRight; // カードの Line(L/R): St, L, R, LR, RL
+  lineUD: SlopeUpDown | null; // カードの Line(U/D): F, U, D, UD, DU（未記入は null）
+  lineLR: SlopeLeftRight | null; // カードの Line(L/R): St, L, R, LR, RL（未記入は null）
 }
 
 // ホールデータ
@@ -376,7 +378,13 @@ export function createDefaultPutt(strokeNumber: 1 | 2 | 3): PuttData {
     lengthSteps: null,
     lengthMeters: null,
     distanceMeters: 0,
-    lineUD: 'flat',
-    lineLR: 'straight',
+    lineUD: null,
+    lineLR: null,
   };
+}
+
+/** プレー済みホール数を返す。一覧APIの holesPlayed があればそれを、無ければ holes から数える。 */
+export function countPlayedHoles(round: Pick<Round, 'holes' | 'holesPlayed'>): number {
+  if (typeof round.holesPlayed === 'number') return round.holesPlayed;
+  return round.holes.filter((h) => h.totalPutts > 0).length;
 }

@@ -36,16 +36,8 @@ async function trpcQuery<T>(path: string, input?: unknown): Promise<T> {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    credentials: "include",
   });
-  const data = await res.json();
-  if (data[0]?.error) {
-    // superjson wraps error in { json: { message, code, data } }
-    const e = data[0].error;
-    const msg = e?.json?.message ?? e?.message ?? JSON.stringify(e);
-    throw new Error(msg);
-  }
-  return data[0]?.result?.data?.json ?? data[0]?.result?.data;
+  return parseTrpcResponse<T>(res);
 }
 
 async function trpcMutate<T>(path: string, input?: unknown): Promise<T> {
@@ -58,16 +50,34 @@ async function trpcMutate<T>(path: string, input?: unknown): Promise<T> {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    credentials: "include",
     body: JSON.stringify({ "0": { json: input ?? null } }),
   });
-  const data = await res.json();
-  if (data[0]?.error) {
-    const e = data[0].error;
+  return parseTrpcResponse<T>(res);
+}
+
+/**
+ * tRPC(batch=1, superjson) のレスポンスを1件分に展開する。
+ * JSONでない応答（API URL の設定ミスで HTML が返る等）はステータス付きの明確なエラーにする。
+ */
+async function parseTrpcResponse<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`API error ${res.status}: 非JSON応答（API URLの設定を確認してください）`);
+  }
+  const item = Array.isArray(data) ? data[0] : data;
+  if (item?.error) {
+    // superjson wraps error in { json: { message, code, data } }
+    const e = item.error;
     const msg = e?.json?.message ?? e?.message ?? JSON.stringify(e);
     throw new Error(msg);
   }
-  return data[0]?.result?.data?.json ?? data[0]?.result?.data;
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}`);
+  }
+  return item?.result?.data?.json ?? item?.result?.data;
 }
 
 // ─── Type-conversion helpers ──────────────────────────────────────────────────
@@ -152,6 +162,8 @@ interface DbRound {
   updatedAt: string | Date;
   // When fetched via rounds.get, holes are included:
   holes?: DbHole[];
+  // When fetched via rounds.list, the number of holes with putts entered:
+  holesPlayed?: number;
 }
 
 interface DbHole {
@@ -183,10 +195,15 @@ interface DbPutt {
 
 // ─── Conversion: DB → Client types ───────────────────────────────────────────
 
-function dbUserProfileToClient(db: DbUserProfile): UserProfile {
+interface DbUserProfileResponse {
+  profile: DbUserProfile | null;
+  name: string | null;
+}
+
+function dbUserProfileToClient(db: DbUserProfile, name: string | null): UserProfile {
   return {
     id: toStringId(db.id),
-    name: "", // name is stored on the users table, not userProfiles
+    name: name ?? "", // name is stored on the users table, not userProfiles
     gender: db.gender ?? DEFAULT_USER_PROFILE.gender,
     birthDate: db.birthDate ?? DEFAULT_USER_PROFILE.birthDate,
     handicap: db.handicap ?? DEFAULT_USER_PROFILE.handicap,
@@ -233,8 +250,8 @@ function dbPuttToClient(db: DbPutt): PuttData {
     lengthSteps: db.lengthSteps,
     lengthMeters: db.lengthMeters,
     distanceMeters: db.distanceMeters ?? 0,
-    lineUD: (db.lineUD as PuttData["lineUD"]) ?? "flat",
-    lineLR: (db.lineLR as PuttData["lineLR"]) ?? "straight",
+    lineUD: (db.lineUD as PuttData["lineUD"]) ?? null,
+    lineLR: (db.lineLR as PuttData["lineLR"]) ?? null,
   };
 }
 
@@ -283,6 +300,10 @@ function dbRoundToClient(db: DbRound): Round {
     putterName: db.putterName ?? "",
     holes,
     totalPutts: db.totalPutts ?? 0,
+    holesPlayed:
+      typeof db.holesPlayed === "number"
+        ? db.holesPlayed
+        : dbHoles.filter((h) => h.totalPutts > 0).length,
     createdAt: toISOString(db.createdAt),
     updatedAt: toISOString(db.updatedAt),
   };
@@ -292,9 +313,16 @@ function dbRoundToClient(db: DbRound): Round {
 
 export async function getUserProfile(): Promise<UserProfile | null> {
   try {
-    const db = await trpcQuery<DbUserProfile | null>("golf.userProfile.get");
-    if (!db) return null;
-    return dbUserProfileToClient(db);
+    const res = await trpcQuery<DbUserProfileResponse | null>("golf.userProfile.get");
+    if (!res?.profile) {
+      // プロフィール行はまだ無いが表示名だけある場合は既定値に名前を載せて返す
+      if (res?.name) {
+        const now = new Date().toISOString();
+        return { id: "", ...DEFAULT_USER_PROFILE, name: res.name, createdAt: now, updatedAt: now };
+      }
+      return null;
+    }
+    return dbUserProfileToClient(res.profile, res.name);
   } catch (error) {
     console.error("[api-golf] getUserProfile error:", error);
     throw error;
@@ -306,16 +334,17 @@ export async function saveUserProfile(
 ): Promise<UserProfile> {
   try {
     const input: Record<string, unknown> = {};
+    if (profile.name !== undefined) input.name = profile.name;
     if (profile.gender !== undefined) input.gender = profile.gender;
     if (profile.birthDate !== undefined) input.birthDate = profile.birthDate;
     if (profile.handicap !== undefined) input.handicap = profile.handicap;
     if (profile.strideLength !== undefined) input.strideLength = profile.strideLength;
 
-    const db = await trpcMutate<DbUserProfile>("golf.userProfile.upsert", input);
-    const client = dbUserProfileToClient(db);
-    // Preserve the name from the incoming profile if provided
-    if (profile.name !== undefined) client.name = profile.name;
-    return client;
+    const res = await trpcMutate<DbUserProfileResponse & { profile: DbUserProfile }>(
+      "golf.userProfile.upsert",
+      input,
+    );
+    return dbUserProfileToClient(res.profile, res.name);
   } catch (error) {
     console.error("[api-golf] saveUserProfile error:", error);
     throw error;
@@ -672,16 +701,18 @@ export async function deleteAllRounds(): Promise<boolean> {
 interface SaveHolesResult {
   roundId: string;
   holes: HoleData[];
+  /** サーバーがDB上の全ホールから再計算したラウンド合計パット */
+  totalPutts: number;
 }
 
 /**
- * saveHolesForRound — upserts all holes (and their putts) for a round.
- * Matches the interface expected by hole-input screen.
+ * saveHolesForRound — upserts all holes (and their putts) for a round in one
+ * server-side transaction. The round's totalPutts is recomputed by the server
+ * from every hole in the DB (not just the ones sent here).
  */
 export async function saveHolesForRound(
   roundId: string,
   holes: HoleData[],
-  roundTotalPutts?: number,
 ): Promise<SaveHolesResult> {
   const numRoundId = toNumericId(roundId);
   if (isNaN(numRoundId)) throw new Error(`Invalid roundId: ${roundId}`);
@@ -707,13 +738,12 @@ export async function saveHolesForRound(
   interface UpsertHolesResult {
     roundId: number;
     holes: DbHole[];
+    totalPutts: number;
   }
 
   const result = await trpcMutate<UpsertHolesResult>("golf.holes.upsertHoles", {
     roundId: numRoundId,
     holes: holesInput,
-    // 指定時はラウンドの totalPutts もサーバー側で同時更新（部分保存の回避）
-    ...(roundTotalPutts !== undefined ? { roundTotalPutts } : {}),
   });
 
   // Map DB holes back to client HoleData, preserving scoreResult from input
@@ -741,5 +771,5 @@ export async function saveHolesForRound(
     );
   });
 
-  return { roundId, holes: allHoles };
+  return { roundId, holes: allHoles, totalPutts: result?.totalPutts ?? 0 };
 }

@@ -89,9 +89,10 @@ export default function HoleInputScreen() {
   const [distPrev, setDistPrev] = useState("");
   const [result, setResult] = useState<ScoreResult | null>(null);
   const [lengthSteps, setLengthSteps] = useState("");
-  const [lengthMeters, setLengthYards] = useState("");
-  const [lineUD, setLineUD] = useState<SlopeUpDown>("flat");
-  const [lineLR, setLineLR] = useState<SlopeLeftRight>("straight");
+  const [lengthMeters, setLengthMeters] = useState("");
+  const [lineUD, setLineUD] = useState<SlopeUpDown | null>(null);
+  const [lineLR, setLineLR] = useState<SlopeLeftRight | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // ラウンド終了確認UI
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
@@ -156,21 +157,26 @@ export default function HoleInputScreen() {
     setDistPrev(putt.distPrev?.toString() || "");
     setResult(putt.result);
     setLengthSteps(putt.lengthSteps?.toString() || "");
-    setLengthYards(putt.lengthMeters?.toString() || "");
+    setLengthMeters(putt.lengthMeters?.toString() || "");
     setLineUD(putt.lineUD);
     setLineLR(putt.lineLR);
   };
 
+  // 分析用の距離: メートル直入力があればそれを優先し、無ければ歩数×歩幅で算出する
+  const resolveDistanceMeters = (steps: number, meters: number | null): number =>
+    meters != null && meters > 0 ? meters : calculateDistance(steps, strideLength);
+
   const getCurrentPuttData = (): PuttData => {
     const steps = parseFloat(lengthSteps) || 0;
+    const meters = parseFloat(lengthMeters) || null;
     return {
       strokeNumber: (currentPuttIndex + 1) as 1 | 2 | 3,
       cupIn,
       distPrev: parseFloat(distPrev) || null,
       result,
       lengthSteps: steps || null,
-      lengthMeters: parseFloat(lengthMeters) || null,
-      distanceMeters: calculateDistance(steps, strideLength),
+      lengthMeters: meters,
+      distanceMeters: resolveDistanceMeters(steps, meters),
       lineUD,
       lineLR,
     };
@@ -239,6 +245,8 @@ export default function HoleInputScreen() {
 
   const saveHoleAndNavigate = async (nextHole: number | "finish") => {
     if (!round) return;
+    if (isSaving) return; // 二重タップによる並行保存を防ぐ
+    setIsSaving(true);
 
     setSaveError(null);
     const savedPutts = saveCurrentPutt();
@@ -261,17 +269,15 @@ export default function HoleInputScreen() {
         : h
     );
 
-    const totalRoundPutts = updatedHoles.reduce((sum, h) => sum + h.totalPutts, 0);
-
     try {
-      // ホール保存とラウンド合計(totalPutts)の更新を1リクエストにまとめ、部分保存を防ぐ
-      await saveHolesForRound(round.id, updatedHoles, totalRoundPutts);
+      // 全ホールを1トランザクションで保存。ラウンド合計はサーバーがDBから再計算する
+      const saved = await saveHolesForRound(round.id, updatedHoles);
 
       // Update local state with merged holes (preserve scoreResult from UI state)
       const updatedRound: Round = {
         ...round,
         holes: updatedHoles,
-        totalPutts: totalRoundPutts,
+        totalPutts: saved.totalPutts,
       };
       setRound(updatedRound);
 
@@ -285,6 +291,8 @@ export default function HoleInputScreen() {
     } catch (error) {
       console.error("[hole-input] saveHoleAndNavigate error:", error);
       setSaveError("データの保存に失敗しました。もう一度お試しください。");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -538,7 +546,7 @@ export default function HoleInputScreen() {
             {/* Length (st / m) */}
             <View>
               <Text className="text-muted text-sm mb-2 font-medium">
-                Length（距離: {calculateDistance(parseFloat(lengthSteps) || 0, strideLength).toFixed(1)}m）
+                Length（距離: {resolveDistanceMeters(parseFloat(lengthSteps) || 0, parseFloat(lengthMeters) || null).toFixed(1)}m）
               </Text>
               <View className="flex-row gap-3">
                 <View className="flex-1">
@@ -558,7 +566,7 @@ export default function HoleInputScreen() {
                   <TextInput
                     className="bg-background border border-border rounded-lg px-3 py-3 text-foreground text-lg"
                     value={lengthMeters}
-                    onChangeText={setLengthYards}
+                    onChangeText={setLengthMeters}
                     placeholder="--"
                     placeholderTextColor={colors.muted}
                     keyboardType="number-pad"
@@ -577,7 +585,7 @@ export default function HoleInputScreen() {
                     key={s}
                     label={LABELS.slopeUpDownShort[s]}
                     selected={lineUD === s}
-                    onPress={() => setLineUD(s)}
+                    onPress={() => setLineUD(lineUD === s ? null : s)}
                     compact
                   />
                 ))}
@@ -593,7 +601,7 @@ export default function HoleInputScreen() {
                     key={s}
                     label={LABELS.slopeLeftRightShort[s]}
                     selected={lineLR === s}
-                    onPress={() => setLineLR(s)}
+                    onPress={() => setLineLR(lineLR === s ? null : s)}
                     compact
                   />
                 ))}
@@ -627,8 +635,10 @@ export default function HoleInputScreen() {
             <TouchableOpacity
               className="flex-1 py-3 rounded-xl bg-primary items-center"
               onPress={() => saveHoleAndNavigate(currentHole + 1)}
+              disabled={isSaving}
+              style={{ opacity: isSaving ? 0.6 : 1 }}
             >
-              <Text className="text-white font-medium">次のホール</Text>
+              <Text className="text-white font-medium">{isSaving ? "保存中..." : "次のホール"}</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
