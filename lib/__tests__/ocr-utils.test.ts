@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyMarkHints,
   assignHoleNumbers,
+  compareOcrHoles,
+  validateOcrHole,
   convertOcrPuttToAppPutt,
   convertOcrHoleToAppHole,
   convertOcrBatchToHoles,
@@ -333,5 +336,110 @@ describe("assignHoleNumbers", () => {
     const out = assignHoleNumbers(cards);
     expect(out[17].hole).toBe(18);
     expect(out[18].hole).toBeNull();
+  });
+});
+
+describe("validateOcrHole", () => {
+  const putt = (n: 1 | 2 | 3, o: Partial<OcrPuttData> = {}): OcrPuttData => ({
+    puttNumber: n,
+    cupIn: false,
+    result: null,
+    lengthMeters: null,
+    lineUD: null,
+    lineLR: null,
+    ...o,
+  });
+  const hole = (putts: OcrPuttData[], o: Partial<OcrHoleData> = {}): OcrHoleData => ({
+    hole: 5,
+    date: "20260916",
+    course: "X",
+    putts,
+    ...o,
+  });
+
+  it("accepts a consistent two-putt card", () => {
+    const h = hole([
+      putt(1, { result: "P", lengthMeters: 8, lineUD: "U", lineLR: "St" }),
+      putt(2, { cupIn: true, lengthMeters: 1, lineUD: "F", lineLR: "St" }),
+      putt(3),
+    ]);
+    expect(validateOcrHole(h)).toEqual([]);
+  });
+
+  it("flags cup-in on the 1st putt followed by more putts, and increasing distances", () => {
+    const h = hole([
+      putt(1, { cupIn: true, lengthMeters: 3 }),
+      putt(2, { lengthMeters: 5 }),
+      putt(3),
+    ]);
+    const w = validateOcrHole(h);
+    expect(w).toContain("1stでカップインなのに2nd以降に記入があります");
+    expect(w).toContain("2ndの距離が1stより長くなっています");
+  });
+
+  it("flags missing hole number, bad date, missing cup-in and differing results", () => {
+    const h = hole(
+      [putt(1, { result: "P", lengthMeters: 4 }), putt(2, { result: "Bo", lengthMeters: 1 }), putt(3)],
+      { hole: null, date: "2026/9" },
+    );
+    const w = validateOcrHole(h);
+    expect(w).toContain("ホール番号が読み取れませんでした");
+    expect(w).toContain("日付が8桁（YYYYMMDD）になっていません");
+    expect(w).toContain("カップインの印がどのパットにもありません");
+    expect(w).toContain("Result（スコア）が複数のパットで異なります");
+  });
+});
+
+describe("compareOcrHoles / applyMarkHints", () => {
+  const base: OcrHoleData = normalizeOcrHole({
+    hole: 3,
+    date: "20260916",
+    course: "ABC",
+    putts: [
+      { puttNumber: 1, cupIn: false, result: "P", lengthMeters: 7, lineUD: "U", lineLR: "L" },
+      { puttNumber: 2, cupIn: true, result: null, lengthMeters: 1, lineUD: null, lineLR: null },
+      { puttNumber: 3, cupIn: false, result: null, lengthMeters: null, lineUD: null, lineLR: null },
+    ],
+  });
+
+  it("lists the paths that differ between two readings", () => {
+    const other = normalizeOcrHole({
+      ...base,
+      hole: 8,
+      putts: [
+        { ...base.putts[0], lengthMeters: 1 },
+        base.putts[1],
+        base.putts[2],
+      ],
+    });
+    expect(compareOcrHoles(base, other).sort()).toEqual(["hole", "putts[0].lengthMeters"]);
+    expect(compareOcrHoles(base, base)).toEqual([]);
+  });
+
+  it("lets confident pixel marks override the LLM and records the disagreement", () => {
+    const { hole, conflicts } = applyMarkHints(base, {
+      sections: [
+        { cupIn: false, result: 3, lineUD: 1, lineLR: "unsure" }, // result: P → Bo
+        { cupIn: true, result: null, lineUD: null, lineLR: null },
+        { cupIn: false, result: null, lineUD: null, lineLR: null },
+      ],
+    });
+    expect(hole.putts[0].result).toBe("Bo");
+    expect(hole.putts[0].lineUD).toBe("U"); // 一致 → そのまま
+    expect(hole.putts[0].lineLR).toBe("L"); // unsure → LLM の値
+    expect(conflicts).toEqual(["putts[0].result"]);
+  });
+
+  it("keeps the LLM value but flags it when pixels see no mark", () => {
+    const { hole, conflicts } = applyMarkHints(base, {
+      sections: [
+        { cupIn: "unsure", result: null, lineUD: "unsure", lineLR: null },
+        { cupIn: false, result: null, lineUD: null, lineLR: null }, // LLM は cupIn=true
+        { cupIn: false, result: null, lineUD: null, lineLR: null },
+      ],
+    });
+    expect(hole.putts[0].result).toBe("P");
+    expect(hole.putts[1].cupIn).toBe(true);
+    expect(conflicts.sort()).toEqual(["putts[0].lineLR", "putts[0].result", "putts[1].cupIn"]);
   });
 });

@@ -15,7 +15,17 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { hapticSuccess } from "@/lib/haptics";
 import type { OcrHoleData, OcrPuttData } from "@/lib/ocr-utils";
-import { assignHoleNumbers, convertOcrBatchToHoles } from "@/lib/ocr-utils";
+import { assignHoleNumbers, convertOcrBatchToHoles, validateOcrHole } from "@/lib/ocr-utils";
+
+/** サーバーの読み取り結果 + 要確認情報 */
+type ReviewHole = OcrHoleData & {
+  /** 二重読み・画素判定と食い違ったフィールド（例 "putts[0].result"） */
+  conflicts?: string[];
+  /** 記入ルールとの矛盾（日本語） */
+  warnings?: string[];
+  /** 四隅マークで台形補正できた画像から読んだか */
+  rectified?: boolean;
+};
 import { saveRound, saveHolesForRound } from "@/lib/storage";
 import type { Round } from "@/lib/types";
 
@@ -89,7 +99,7 @@ export default function OcrReviewScreen() {
   const colors = useColors();
   const { data, roundId } = useLocalSearchParams<{ data: string; roundId?: string }>();
 
-  const [ocrResults, setOcrResults] = useState<OcrHoleData[]>([]);
+  const [ocrResults, setOcrResults] = useState<ReviewHole[]>([]);
   const [expandedHole, setExpandedHole] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   // Alert.alert は react-native-web では no-op のため、確認・エラーはインライン表示にする
@@ -106,13 +116,18 @@ export default function OcrReviewScreen() {
     if (data) {
       try {
         const parsed = JSON.parse(data);
-        const results: OcrHoleData[] = Array.isArray(parsed) ? parsed : [parsed];
+        const results: ReviewHole[] = Array.isArray(parsed) ? parsed : [parsed];
 
         // ホール番号はカードに書かれた値を尊重し、読めなかった分だけ順番で補う。
         // 割り当て結果は各カードの Hole 欄で修正できる。
-        const assigned = assignHoleNumbers(results);
+        const assigned = assignHoleNumbers(results) as ReviewHole[];
 
         setOcrResults(assigned);
+        // 要確認のあるカードがあれば最初のものを開いておく
+        const firstIssue = assigned.findIndex(
+          (r) => (r.conflicts?.length ?? 0) > 0 || (r.warnings?.length ?? 0) > 0,
+        );
+        if (firstIssue >= 0) setExpandedHole(firstIssue);
       } catch (e) {
         console.error("Failed to parse OCR data:", e);
       }
@@ -125,7 +140,15 @@ export default function OcrReviewScreen() {
         const updated = [...prev];
         const putts = [...updated[holeIndex].putts];
         putts[puttIndex] = { ...putts[puttIndex], [field]: value };
-        updated[holeIndex] = { ...updated[holeIndex], putts };
+        // ユーザーが手で直したフィールドは「要確認」を解除し、整合性警告を再計算する
+        const path = `putts[${puttIndex}].${field}`;
+        const next: ReviewHole = {
+          ...updated[holeIndex],
+          putts,
+          conflicts: (updated[holeIndex].conflicts ?? []).filter((c) => c !== path),
+        };
+        next.warnings = validateOcrHole(next);
+        updated[holeIndex] = next;
         return updated;
       });
     },
@@ -136,11 +159,27 @@ export default function OcrReviewScreen() {
     (holeIndex: number, field: keyof OcrHoleData, value: any) => {
       setOcrResults((prev) => {
         const updated = [...prev];
-        updated[holeIndex] = { ...updated[holeIndex], [field]: value };
+        const next: ReviewHole = {
+          ...updated[holeIndex],
+          [field]: value,
+          conflicts: (updated[holeIndex].conflicts ?? []).filter((c) => c !== field),
+        };
+        next.warnings = validateOcrHole(next);
+        updated[holeIndex] = next;
         return updated;
       });
     },
     []
+  );
+
+  // 要確認の総数（ヘッダー表示用）
+  const issueCount = useMemo(
+    () =>
+      ocrResults.reduce(
+        (sum, r) => sum + (r.conflicts?.length ?? 0) + (r.warnings?.length ?? 0),
+        0,
+      ),
+    [ocrResults],
   );
 
   const handleSaveToRound = () => {
@@ -249,8 +288,25 @@ export default function OcrReviewScreen() {
   const renderPuttSection = (
     puttData: OcrPuttData,
     holeIndex: number,
-    puttIndex: number
+    puttIndex: number,
+    conflicts: string[]
   ) => {
+    const flagged = (field: keyof OcrPuttData) => conflicts.includes(`putts[${puttIndex}].${field}`);
+    // 要確認フィールドは背景を薄い警告色にして目立たせる
+    const rowStyle = (field: keyof OcrPuttData) =>
+      flagged(field)
+        ? {
+            backgroundColor: colors.warning + "22",
+            borderRadius: 6,
+            marginHorizontal: -6,
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+          }
+        : undefined;
+    const FlagIcon = ({ field }: { field: keyof OcrPuttData }) =>
+      flagged(field) ? (
+        <IconSymbol name="flag.fill" size={12} color={colors.warning} style={{ marginLeft: 6 }} />
+      ) : null;
     const isEmpty =
       !puttData.cupIn &&
       puttData.result === null &&
@@ -277,7 +333,7 @@ export default function OcrReviewScreen() {
         </Text>
 
         {/* In（カップイン） */}
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+        <View style={[{ flexDirection: "row", alignItems: "center", marginBottom: 6 }, rowStyle("cupIn")]}>
           <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>In:</Text>
           <TouchableOpacity
             onPress={() => updatePuttField(holeIndex, puttIndex, "cupIn", !puttData.cupIn)}
@@ -307,10 +363,11 @@ export default function OcrReviewScreen() {
               {puttData.cupIn ? "カップイン" : ""}
             </Text>
           </TouchableOpacity>
+          <FlagIcon field="cupIn" />
         </View>
 
         {/* Result */}
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+        <View style={[{ flexDirection: "row", alignItems: "center", marginBottom: 6 }, rowStyle("result")]}>
           <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Result:</Text>
           <MiniSelect
             options={RESULT_OPTIONS}
@@ -319,10 +376,11 @@ export default function OcrReviewScreen() {
             labels={RESULT_LABELS}
             colors={colors}
           />
+          <FlagIcon field="result" />
         </View>
 
         {/* Length (m) */}
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+        <View style={[{ flexDirection: "row", alignItems: "center", marginBottom: 6 }, rowStyle("lengthMeters")]}>
           <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Length:</Text>
           <TextInput
             style={{
@@ -346,10 +404,11 @@ export default function OcrReviewScreen() {
             placeholderTextColor={colors.muted}
           />
           <Text style={{ color: colors.muted, fontSize: 11, marginLeft: 4 }}>m</Text>
+          <FlagIcon field="lengthMeters" />
         </View>
 
         {/* Line U/D */}
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+        <View style={[{ flexDirection: "row", alignItems: "center", marginBottom: 6 }, rowStyle("lineUD")]}>
           <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Line(U/D):</Text>
           <MiniSelect
             options={LINE_UD_OPTIONS}
@@ -358,10 +417,11 @@ export default function OcrReviewScreen() {
             labels={LINE_UD_LABELS}
             colors={colors}
           />
+          <FlagIcon field="lineUD" />
         </View>
 
         {/* Line L/R */}
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <View style={[{ flexDirection: "row", alignItems: "center" }, rowStyle("lineLR")]}>
           <Text style={{ color: colors.muted, fontSize: 11, width: 80 }}>Line(L/R):</Text>
           <MiniSelect
             options={LINE_LR_OPTIONS}
@@ -370,14 +430,18 @@ export default function OcrReviewScreen() {
             labels={LINE_LR_LABELS}
             colors={colors}
           />
+          <FlagIcon field="lineLR" />
         </View>
       </View>
     );
   };
 
-  const renderHoleItem = ({ item, index }: { item: OcrHoleData; index: number }) => {
+  const renderHoleItem = ({ item, index }: { item: ReviewHole; index: number }) => {
     const isExpanded = expandedHole === index;
     const holeNum = item.hole || "?";
+    const conflicts = item.conflicts ?? [];
+    const warnings = item.warnings ?? [];
+    const issues = conflicts.length + warnings.length;
 
     // サマリー情報
     const firstPutt = item.putts[0];
@@ -410,6 +474,18 @@ export default function OcrReviewScreen() {
               <Text className="text-muted text-xs">
                 Result: {resultText} · Length: {lengthText}
               </Text>
+              <View style={{ flexDirection: "row", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                {item.rectified === false && (
+                  <Text style={{ color: colors.muted, fontSize: 10 }}>■未検出（補正なし）</Text>
+                )}
+                {issues > 0 ? (
+                  <Text style={{ color: colors.warning, fontSize: 10, fontWeight: "700" }}>
+                    要確認 {issues}件
+                  </Text>
+                ) : (
+                  <Text style={{ color: colors.success, fontSize: 10, fontWeight: "600" }}>確認事項なし</Text>
+                )}
+              </View>
             </View>
           </View>
           <IconSymbol
@@ -489,9 +565,35 @@ export default function OcrReviewScreen() {
               </View>
             </View>
 
+            {/* 記入ルールとの矛盾 */}
+            {warnings.length > 0 && (
+              <View
+                style={{
+                  backgroundColor: colors.warning + "1A",
+                  borderColor: colors.warning + "55",
+                  borderWidth: 1,
+                  borderRadius: 8,
+                  padding: 8,
+                  marginBottom: 6,
+                  gap: 2,
+                }}
+              >
+                {warnings.map((w) => (
+                  <Text key={w} style={{ color: colors.warning, fontSize: 11 }}>
+                    ・{w}
+                  </Text>
+                ))}
+              </View>
+            )}
+            {conflicts.length > 0 && (
+              <Text style={{ color: colors.muted, fontSize: 10, marginBottom: 6 }}>
+                旗マークの項目は読み取り結果が一致しませんでした。カードと見比べて確認してください。
+              </Text>
+            )}
+
             {/* パットセクション */}
             {item.putts.map((putt, puttIndex) =>
-              renderPuttSection(putt, index, puttIndex)
+              renderPuttSection(putt, index, puttIndex, conflicts)
             )}
           </View>
         )}
@@ -506,7 +608,12 @@ export default function OcrReviewScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <IconSymbol name="arrow.left" size={24} color={colors.foreground} />
         </TouchableOpacity>
-        <Text className="text-lg font-semibold text-foreground">読み取り結果</Text>
+        <View style={{ alignItems: "center" }}>
+          <Text className="text-lg font-semibold text-foreground">読み取り結果</Text>
+          {issueCount > 0 && (
+            <Text style={{ color: colors.warning, fontSize: 11, fontWeight: "600" }}>要確認 {issueCount}件</Text>
+          )}
+        </View>
         <TouchableOpacity
           onPress={handleSaveToRound}
           disabled={isSaving || confirmSkip}
@@ -522,6 +629,7 @@ export default function OcrReviewScreen() {
       <View className="px-4 py-2 bg-surface/50">
         <Text className="text-muted text-xs">
           AIが読み取った結果です。各ホールをタップして内容を確認・修正できます。
+          {issueCount > 0 ? " 黄色の旗が付いた項目と警告を優先して確認してください。" : ""}
         </Text>
       </View>
 

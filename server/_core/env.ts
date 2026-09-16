@@ -10,4 +10,7 @@ export const ENV = {
   // 低コスト/高速: gemini-3.1-flash-lite（$0.25/$1.50）— 速度・コスト重視のとき GEMINI_MODEL で指定
   // ※gemini-2.5系は2026/10/16に廃止予定のため使用しない
   geminiModel: process.env.GEMINI_MODEL ?? "gemini-3.5-flash",
+  // OCR の二重読み（検証パス）に使う低コストモデル。空文字で無効化。
+  // 主モデルと結果が食い違ったフィールドを確認画面で強調表示するために使う。
+  ocrVerifyModel: process.env.OCR_VERIFY_MODEL ?? "gemini-3.1-flash-lite",
 };

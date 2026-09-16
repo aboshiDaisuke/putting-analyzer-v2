@@ -220,3 +220,134 @@ export function convertOcrBatchToHoles(
   holes.sort((a, b) => a.holeNumber - b.holeNumber);
   return holes;
 }
+
+// ─── 整合性チェック（保存前の警告） ────────────────────────────────────────
+
+function puttHasData(p: OcrPuttData): boolean {
+  return p.cupIn || p.result !== null || p.lengthMeters !== null || p.lineUD !== null || p.lineLR !== null;
+}
+
+/**
+ * カードの記入ルールに照らして矛盾を検出し、日本語の警告文を返す（保存は妨げない）。
+ * OCR の誤読（隣の枠を拾う、ラベル文字を印と誤認する等）はここで大半が浮かび上がる。
+ */
+export function validateOcrHole(hole: OcrHoleData): string[] {
+  const warnings: string[] = [];
+  const [p1, p2, p3] = hole.putts;
+  const has = hole.putts.map(puttHasData);
+
+  if (hole.hole === null) warnings.push("ホール番号が読み取れませんでした");
+  if (hole.date !== null && !/^\d{8}$/.test(hole.date.replace(/\D/g, "")))
+    warnings.push("日付が8桁（YYYYMMDD）になっていません");
+
+  if (p1.cupIn && (has[1] || has[2])) warnings.push("1stでカップインなのに2nd以降に記入があります");
+  if (p2?.cupIn && has[2]) warnings.push("2ndでカップインなのに3rdに記入があります");
+  if (has[1] && !has[0]) warnings.push("2ndに記入がありますが1stが空です");
+  if (has[2] && !has[1]) warnings.push("3rdに記入がありますが2ndが空です");
+
+  const anyData = has.some(Boolean);
+  if (anyData && !hole.putts.some((p) => p.cupIn)) warnings.push("カップインの印がどのパットにもありません");
+
+  if (p1.lengthMeters !== null && p2?.lengthMeters !== null && p2.lengthMeters >= p1.lengthMeters)
+    warnings.push("2ndの距離が1stより長くなっています");
+  if (p2?.lengthMeters !== null && p3?.lengthMeters !== null && p3.lengthMeters >= p2.lengthMeters)
+    warnings.push("3rdの距離が2ndより長くなっています");
+
+  const results = hole.putts.map((p) => p.result).filter((r): r is NonNullable<typeof r> => r !== null);
+  if (new Set(results).size > 1) warnings.push("Result（スコア）が複数のパットで異なります");
+
+  const marked = hole.putts.filter((p) => has[hole.putts.indexOf(p)]);
+  if (marked.length > 0 && marked.every((p) => p.lengthMeters === null))
+    warnings.push("距離（Length）が1つも読み取れていません");
+
+  return warnings;
+}
+
+// ─── 二重読み（別モデル）との比較 ─────────────────────────────────────────
+
+/** 2つの読み取り結果を比べ、値が異なるフィールドのパスを返す（例: "putts[1].lengthMeters"） */
+export function compareOcrHoles(a: OcrHoleData, b: OcrHoleData): string[] {
+  const diffs: string[] = [];
+  if (a.hole !== b.hole) diffs.push("hole");
+  if ((a.date ?? "").replace(/\D/g, "") !== (b.date ?? "").replace(/\D/g, "")) diffs.push("date");
+  if ((a.course ?? "").trim().toLowerCase() !== (b.course ?? "").trim().toLowerCase()) diffs.push("course");
+  for (let i = 0; i < 3; i++) {
+    const pa = a.putts[i];
+    const pb = b.putts[i];
+    if (!pa || !pb) continue;
+    for (const key of ["cupIn", "result", "lengthMeters", "lineUD", "lineLR"] as const) {
+      if (pa[key] !== pb[key]) diffs.push(`putts[${i}].${key}`);
+    }
+  }
+  return diffs;
+}
+
+// ─── 端末側のピクセル判定（チェック枠）の適用 ──────────────────────────────
+
+/** 排他枠の判定: 選ばれた index / null = 印なし / "unsure" = 判定不能 */
+export type ChoiceHint = number | null | "unsure";
+export type SectionMarkHints = {
+  cupIn: boolean | "unsure";
+  result: ChoiceHint;
+  lineUD: ChoiceHint;
+  lineLR: ChoiceHint;
+};
+/** 台形補正した画像の枠を画素で判定した結果。LLM の読み取りより優先して使う */
+export type OcrMarkHints = { sections: [SectionMarkHints, SectionMarkHints, SectionMarkHints] };
+
+const RESULT_BY_INDEX = ["E", "Ba", "P", "Bo", "D+"] as const;
+const LINE_UD_BY_INDEX = ["F", "U", "D"] as const;
+const LINE_LR_BY_INDEX = ["St", "L", "R"] as const;
+
+/**
+ * 画素判定を LLM の結果に重ねる。
+ *  - 画素が「印あり」と判定した枠はそれを採用（LLM と違えば conflicts に記録）
+ *  - 画素が「印なし」なのに LLM が値を出した場合は LLM 値を残しつつ conflicts に記録
+ *    （○囲みなど枠の外側を通る印は画素側が見逃すことがあるため）
+ *  - "unsure" は LLM に委ねる
+ */
+export function applyMarkHints(
+  hole: OcrHoleData,
+  hints: OcrMarkHints,
+): { hole: OcrHoleData; conflicts: string[] } {
+  const conflicts: string[] = [];
+  const putts = hole.putts.map((putt, i) => {
+    const h = hints.sections[i];
+    if (!h) return putt;
+    const next: OcrPuttData = { ...putt };
+
+    if (h.cupIn !== "unsure") {
+      if (h.cupIn) {
+        if (!putt.cupIn) conflicts.push(`putts[${i}].cupIn`);
+        next.cupIn = true;
+      } else if (putt.cupIn) {
+        conflicts.push(`putts[${i}].cupIn`);
+      }
+    }
+
+    const resolve = <T extends string>(
+      key: "result" | "lineUD" | "lineLR",
+      hint: ChoiceHint,
+      table: readonly T[],
+    ): T | null | undefined => {
+      if (hint === "unsure") return undefined; // LLM の値のまま
+      const current = putt[key] as T | null;
+      if (typeof hint === "number") {
+        const value = table[hint];
+        if (value === undefined) return undefined;
+        if (current !== value) conflicts.push(`putts[${i}].${key}`);
+        return value;
+      }
+      if (current !== null) conflicts.push(`putts[${i}].${key}`);
+      return undefined;
+    };
+    const result = resolve("result", h.result, RESULT_BY_INDEX);
+    if (result !== undefined) next.result = result;
+    const lineUD = resolve("lineUD", h.lineUD, LINE_UD_BY_INDEX);
+    if (lineUD !== undefined) next.lineUD = lineUD;
+    const lineLR = resolve("lineLR", h.lineLR, LINE_LR_BY_INDEX);
+    if (lineLR !== undefined) next.lineLR = lineLR;
+    return next;
+  });
+  return { hole: { ...hole, putts }, conflicts: Array.from(new Set(conflicts)) };
+}
