@@ -110,6 +110,7 @@ export default function AnalyticsScreen() {
         label: s.range,
         value: s.rate,
         count: s.attempts,
+        benchmark: s.benchmarkRate,
       })),
       slopeUpDown: summary.slopeStats.map((s) => ({
         label: LABELS.slopeUpDownShort[s.slope],
@@ -355,6 +356,7 @@ export default function AnalyticsScreen() {
                 maxValue={100}
                 unit="%"
                 referenceThreshold={MIN_RELIABLE_PUTT_SAMPLE}
+                benchmarkLabel="PGAツアー目安（概算）"
               />
             </View>
 

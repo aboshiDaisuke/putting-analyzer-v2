@@ -73,6 +73,7 @@ export interface BarDatum {
   label: string;
   value: number;
   count?: number; // 試行数（n=）。未指定なら非表示。0件は描画から除外される。
+  benchmark?: number; // 基準値（例: ツアー目安）。指定すると棒の上に破線の目印を描く
 }
 
 /**
@@ -88,6 +89,7 @@ function BarChartImpl({
   decimals = 0,
   height = 200,
   referenceThreshold,
+  benchmarkLabel,
 }: {
   data: BarDatum[];
   color: string;
@@ -96,6 +98,8 @@ function BarChartImpl({
   decimals?: number;
   height?: number;
   referenceThreshold?: number;
+  /** benchmark を持つデータがあるときに凡例として表示する文言 */
+  benchmarkLabel?: string;
 }) {
   const colors = useColors();
   const { width, onLayout } = useChartWidth();
@@ -116,6 +120,7 @@ function BarChartImpl({
   const plotH = height - padTop - padBottom;
   const slot = plotW / items.length;
   const barW = Math.min(slot * 0.56, 44);
+  const hasBenchmark = items.some((d) => d.benchmark !== undefined);
 
   return (
     <View onLayout={onLayout}>
@@ -166,6 +171,17 @@ function BarChartImpl({
                 >
                   {d.label}
                 </SvgText>
+                {d.benchmark !== undefined && (
+                  <Line
+                    x1={cx - barW / 2 - 6}
+                    y1={padTop + plotH - plotH * Math.min(d.benchmark / max, 1)}
+                    x2={cx + barW / 2 + 6}
+                    y2={padTop + plotH - plotH * Math.min(d.benchmark / max, 1)}
+                    stroke={colors.accent}
+                    strokeWidth={2}
+                    strokeDasharray="4 3"
+                  />
+                )}
                 {d.count !== undefined && (
                   <SvgText
                     x={cx}
@@ -185,6 +201,12 @@ function BarChartImpl({
             );
           })}
         </Svg>
+      )}
+      {hasBenchmark && benchmarkLabel && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+          <View style={{ width: 16, borderTopWidth: 2, borderColor: colors.accent, borderStyle: "dashed" }} />
+          <Text style={{ color: colors.muted, fontSize: 11 }}>{benchmarkLabel}</Text>
+        </View>
       )}
     </View>
   );

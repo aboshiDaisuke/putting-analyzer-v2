@@ -179,6 +179,8 @@ export interface DistanceStats {
   attempts: number;
   cupIns: number;
   rate: number;
+  /** ツアー目安のカップイン率（%）。基準線の表示用 */
+  benchmarkRate?: number;
 }
 
 export interface SlopeStats {

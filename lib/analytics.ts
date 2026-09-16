@@ -29,6 +29,19 @@ const DISTANCE_RANGES = [
   { min: 10, max: Infinity, label: '10m+' },
 ];
 
+// 距離帯ごとのカップイン率のツアー目安（%）。
+// PGAツアーの距離別ワンパット率（Broadie "Every Shot Counts" 等の公表値）を
+// 本アプリの距離帯へ丸めた概算。自分の値と並べて「どの距離帯が伸びしろか」を見るための基準線。
+export const TOUR_MAKE_RATE_BENCHMARK: Record<string, number> = {
+  '0-1m': 99,
+  '1-2m': 78,
+  '2-3m': 50,
+  '3-5m': 30,
+  '5-7m': 17,
+  '7-10m': 10,
+  '10m+': 5,
+};
+
 // グリーンスピード範囲の定義（フィート）
 const SPEED_RANGES = [
   { min: 0, max: 8, label: '~8ft' },
@@ -162,6 +175,7 @@ export function calculateDistanceStats(rounds: Round[]): DistanceStats[] {
       attempts: puttsInRange.length,
       cupIns,
       rate: puttsInRange.length > 0 ? (cupIns / puttsInRange.length) * 100 : 0,
+      benchmarkRate: TOUR_MAKE_RATE_BENCHMARK[range.label],
     };
   });
 }
