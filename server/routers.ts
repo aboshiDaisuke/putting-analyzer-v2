@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { protectedProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import { golfRouter } from "./golfRouter";
 import { normalizeOcrHole } from "../lib/ocr-utils";
@@ -124,16 +123,9 @@ const OCR_SYSTEM_PROMPT = `あなたはゴルフのパッティングスコア�
 }`;
 
 export const appRouter = router({
-  system: systemRouter,
-  auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
-    logout: publicProcedure.mutation(() => {
-      // Cookie clearing is handled by REST endpoint /api/auth/logout
-      // Mobile clients use supabase.auth.signOut() directly
-      return { success: true } as const;
-    }),
-  }),
-
+  // 認証は Supabase Auth をクライアントが直接使う（ログイン/ログアウト/セッション）。
+  // サーバーは Authorization: Bearer <access token> を検証するだけで、
+  // 独自の auth エンドポイントは持たない。
   golf: golfRouter,
 
   ocr: router({
