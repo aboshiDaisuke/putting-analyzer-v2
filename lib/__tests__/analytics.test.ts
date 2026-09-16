@@ -10,6 +10,7 @@ import {
   generatePracticeInsights,
   isReferenceSample,
   calculateLagAnalysis,
+  calculateSlopeStats,
   calculateAdjustedPutterStats,
   calculatePersonalStrokesGained,
   analyzeByDistance,
@@ -150,6 +151,44 @@ describe("Analytics Functions", () => {
       expect(lag.recordedHoles).toBe(2);
       expect(lag.averageLeaveMeters).toBeCloseTo(1.3716);
       expect(lag.buckets.find((bucket) => bucket.range === "1〜2m")?.threePuttRate).toBe(100);
+    });
+
+    it("uses the 2nd putt's entered distance as the leave when distPrev is missing (OCR data)", () => {
+      const round = createRound(6, [
+        {
+          totalPutts: 3,
+          putts: [
+            createPutt({ strokeNumber: 1, lengthMeters: 12, distanceMeters: 12 }),
+            createPutt({ strokeNumber: 2, lengthMeters: 3, distanceMeters: 3 }),
+            createPutt({ strokeNumber: 3, cupIn: true }),
+          ],
+        },
+        {
+          totalPutts: 2,
+          putts: [
+            createPutt({ strokeNumber: 1, lengthMeters: 8, distanceMeters: 8 }),
+            createPutt({ strokeNumber: 2, lengthMeters: 1, distanceMeters: 1, cupIn: true }),
+          ],
+        },
+      ]);
+
+      const lag = calculateLagAnalysis([round]);
+
+      expect(lag.recordedHoles).toBe(2);
+      expect(lag.averageLeaveMeters).toBe(2);
+      expect(lag.buckets.find((bucket) => bucket.range === "2m〜")?.threePuttRate).toBe(100);
+    });
+
+    it("excludes putts with no slope recorded from slope stats instead of counting them as flat", () => {
+      const round = createRound(7, [
+        { totalPutts: 1, putts: [createPutt({ lineUD: null, lineLR: null, cupIn: true })] },
+        { totalPutts: 2, putts: [createPutt({ lineUD: "flat", lineLR: "straight" })] },
+      ]);
+
+      const flat = calculateSlopeStats([round]).find((s) => s.slope === "flat");
+      expect(flat?.attempts).toBe(1);
+      expect(flat?.cupIns).toBe(0);
+      expect(analyzeBySlope([round]).flat.count).toBe(1);
     });
 
     it("produces condition-adjusted putter rankings", () => {

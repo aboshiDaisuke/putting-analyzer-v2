@@ -380,17 +380,27 @@ export function calculateRoundTrend(rounds: Round[]): RoundTrendItem[] {
     });
 }
 
-// 2ndパットの distPrev は1stパット後の残り距離（yd）。これを使って
-// ロングパットの寄せ距離と3パット発生率の関係を分析する。
+// 1stパット後の残り距離（＝2ndパットの距離）と3パット発生率の関係を分析する。
+// 残り距離は 2ndパットの入力距離（OCR/手入力）を優先し、無ければ distPrev（yd）で補う。
+function leaveMetersAfterFirstPutt(hole: HoleData): number | null {
+  const secondPutt = hole.putts.find((putt) => putt.strokeNumber === 2);
+  if (!secondPutt) return null;
+  if (secondPutt.lengthMeters != null && secondPutt.lengthMeters > 0) {
+    return secondPutt.lengthMeters;
+  }
+  if (secondPutt.distanceMeters > 0) return secondPutt.distanceMeters;
+  if (secondPutt.distPrev != null && secondPutt.distPrev > 0) {
+    return secondPutt.distPrev * 0.9144;
+  }
+  return null;
+}
+
 export function calculateLagAnalysis(rounds: Round[]): LagAnalysis {
   const outcomes = rounds.flatMap((round) =>
     getPlayedHoles(round).flatMap((hole) => {
-      const secondPutt = hole.putts.find((putt) => putt.strokeNumber === 2);
-      if (!secondPutt?.distPrev || secondPutt.distPrev <= 0) return [];
-      return [{
-        leaveMeters: secondPutt.distPrev * 0.9144,
-        threePutt: hole.totalPutts >= 3,
-      }];
+      const leaveMeters = leaveMetersAfterFirstPutt(hole);
+      if (leaveMeters == null) return [];
+      return [{ leaveMeters, threePutt: hole.totalPutts >= 3 }];
     }),
   );
 
@@ -731,6 +741,7 @@ export function analyzeBySlope(rounds: Round[]): {
   };
   
   for (const { putt } of firstPutts) {
+    if (!putt.lineUD) continue; // 傾斜未記入は集計しない
     categories[putt.lineUD].attempts++;
     if (putt.cupIn) {
       categories[putt.lineUD].cupIns++;
