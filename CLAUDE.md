@@ -20,6 +20,13 @@
 - 傾斜「未記入」を null で保持（フラットと区別）、ラグ分析は 2nd パットの距離を使用
 - 表示名を `users.name` に保存、認証 context にキャッシュ導入、cookie 認証経路など未使用コードを削除
 
+## 2026-09-16 追加分（OCR精度向上・機能）
+
+- OCR: 台形補正（Web）→ 枠の画素判定 → responseSchema → お手本画像 few-shot → 二重読み → 整合性チェック。
+  詳細は FABLE5_VERSION.md。`OCR_VERIFY_MODEL` を Vercel 環境変数に追加すると検証モデルを変更/無効化できる（未設定なら lite で有効）
+- オフライン保存キュー、距離別チャートのツアー目安、CSV エクスポート
+- カードのレイアウトを変えたら `scripts/ocr/measure-layout.js` で `lib/ocr-layout.ts` を再生成すること
+
 ## 次にやること
 
 1. Supabase Dashboard でプロジェクトを Restore する
@@ -29,7 +36,9 @@
    - 0004 は所有者ロール（postgres）で実行すること。適用後 `SELECT relrowsecurity FROM pg_class` で確認
 3. anon key で `https://<ref>.supabase.co/rest/v1/rounds?select=*` を叩いて 401/空になることを確認
 4. ログイン → ラウンド作成 → ホール入力 → 分析 が本番で動くことを確認
-5. 問題がなければプッシュし、ドラフトPRを Ready にする
+5. 実際のカード写真で OCR を試し、「補正OK」バッジが出るか・要確認の件数が妥当かを確認する
+   （■未検出が続く場合は `lib/ocr-image-core.ts` の `findCornerMarkers` のサイズ/形状の閾値を調整）
+6. 問題がなければプッシュし、ドラフトPRを Ready にする
 
 ## 重要な注意
 
