@@ -36,16 +36,8 @@ async function trpcQuery<T>(path: string, input?: unknown): Promise<T> {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    credentials: "include",
   });
-  const data = await res.json();
-  if (data[0]?.error) {
-    // superjson wraps error in { json: { message, code, data } }
-    const e = data[0].error;
-    const msg = e?.json?.message ?? e?.message ?? JSON.stringify(e);
-    throw new Error(msg);
-  }
-  return data[0]?.result?.data?.json ?? data[0]?.result?.data;
+  return parseTrpcResponse<T>(res);
 }
 
 async function trpcMutate<T>(path: string, input?: unknown): Promise<T> {
@@ -58,16 +50,34 @@ async function trpcMutate<T>(path: string, input?: unknown): Promise<T> {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    credentials: "include",
     body: JSON.stringify({ "0": { json: input ?? null } }),
   });
-  const data = await res.json();
-  if (data[0]?.error) {
-    const e = data[0].error;
+  return parseTrpcResponse<T>(res);
+}
+
+/**
+ * tRPC(batch=1, superjson) のレスポンスを1件分に展開する。
+ * JSONでない応答（API URL の設定ミスで HTML が返る等）はステータス付きの明確なエラーにする。
+ */
+async function parseTrpcResponse<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`API error ${res.status}: 非JSON応答（API URLの設定を確認してください）`);
+  }
+  const item = Array.isArray(data) ? data[0] : data;
+  if (item?.error) {
+    // superjson wraps error in { json: { message, code, data } }
+    const e = item.error;
     const msg = e?.json?.message ?? e?.message ?? JSON.stringify(e);
     throw new Error(msg);
   }
-  return data[0]?.result?.data?.json ?? data[0]?.result?.data;
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}`);
+  }
+  return item?.result?.data?.json ?? item?.result?.data;
 }
 
 // ─── Type-conversion helpers ──────────────────────────────────────────────────
@@ -152,12 +162,15 @@ interface DbRound {
   updatedAt: string | Date;
   // When fetched via rounds.get, holes are included:
   holes?: DbHole[];
+  // When fetched via rounds.list, the number of holes with putts entered:
+  holesPlayed?: number;
 }
 
 interface DbHole {
   id: number;
   roundId: number;
   holeNumber: number;
+  scoreResult: string | null;
   totalPutts: number | null;
   createdAt: string | Date;
   updatedAt: string | Date;
@@ -174,21 +187,23 @@ interface DbPutt {
   lengthSteps: number | null;
   lengthMeters: number | null;
   distanceMeters: number | null;
-  missedDirection: number | null;
-  touch: number | null;
   lineUD: string | null;
   lineLR: string | null;
-  mental: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
 
 // ─── Conversion: DB → Client types ───────────────────────────────────────────
 
-function dbUserProfileToClient(db: DbUserProfile): UserProfile {
+interface DbUserProfileResponse {
+  profile: DbUserProfile | null;
+  name: string | null;
+}
+
+function dbUserProfileToClient(db: DbUserProfile, name: string | null): UserProfile {
   return {
     id: toStringId(db.id),
-    name: "", // name is stored on the users table, not userProfiles
+    name: name ?? "", // name is stored on the users table, not userProfiles
     gender: db.gender ?? DEFAULT_USER_PROFILE.gender,
     birthDate: db.birthDate ?? DEFAULT_USER_PROFILE.birthDate,
     handicap: db.handicap ?? DEFAULT_USER_PROFILE.handicap,
@@ -235,27 +250,15 @@ function dbPuttToClient(db: DbPutt): PuttData {
     lengthSteps: db.lengthSteps,
     lengthMeters: db.lengthMeters,
     distanceMeters: db.distanceMeters ?? 0,
-    missedDirection: (db.missedDirection as PuttData["missedDirection"]) ?? null,
-    touch: (db.touch as PuttData["touch"]) ?? null,
-    lineUD: (db.lineUD as PuttData["lineUD"]) ?? "flat",
-    lineLR: (db.lineLR as PuttData["lineLR"]) ?? "straight",
-    mental: parseMentalState(db.mental),
+    lineUD: (db.lineUD as PuttData["lineUD"]) ?? null,
+    lineLR: (db.lineLR as PuttData["lineLR"]) ?? null,
   };
-}
-
-function parseMentalState(v: string | null | undefined): PuttData["mental"] {
-  if (v === null || v === undefined) return null;
-  if (v === "P") return "P";
-  if (v === "N") return "N";
-  const n = parseInt(v, 10);
-  if (n >= 1 && n <= 5) return n as 1 | 2 | 3 | 4 | 5;
-  return null;
 }
 
 function dbHoleToClient(db: DbHole): HoleData {
   return {
     holeNumber: db.holeNumber,
-    scoreResult: "par", // scoreResult is not stored in DB; default to "par"
+    scoreResult: (db.scoreResult as HoleData["scoreResult"]) ?? "par",
     totalPutts: db.totalPutts ?? 0,
     putts: (db.putts ?? []).map(dbPuttToClient),
   };
@@ -297,6 +300,10 @@ function dbRoundToClient(db: DbRound): Round {
     putterName: db.putterName ?? "",
     holes,
     totalPutts: db.totalPutts ?? 0,
+    holesPlayed:
+      typeof db.holesPlayed === "number"
+        ? db.holesPlayed
+        : dbHoles.filter((h) => h.totalPutts > 0).length,
     createdAt: toISOString(db.createdAt),
     updatedAt: toISOString(db.updatedAt),
   };
@@ -306,9 +313,16 @@ function dbRoundToClient(db: DbRound): Round {
 
 export async function getUserProfile(): Promise<UserProfile | null> {
   try {
-    const db = await trpcQuery<DbUserProfile | null>("golf.userProfile.get");
-    if (!db) return null;
-    return dbUserProfileToClient(db);
+    const res = await trpcQuery<DbUserProfileResponse | null>("golf.userProfile.get");
+    if (!res?.profile) {
+      // プロフィール行はまだ無いが表示名だけある場合は既定値に名前を載せて返す
+      if (res?.name) {
+        const now = new Date().toISOString();
+        return { id: "", ...DEFAULT_USER_PROFILE, name: res.name, createdAt: now, updatedAt: now };
+      }
+      return null;
+    }
+    return dbUserProfileToClient(res.profile, res.name);
   } catch (error) {
     console.error("[api-golf] getUserProfile error:", error);
     throw error;
@@ -320,16 +334,17 @@ export async function saveUserProfile(
 ): Promise<UserProfile> {
   try {
     const input: Record<string, unknown> = {};
+    if (profile.name !== undefined) input.name = profile.name;
     if (profile.gender !== undefined) input.gender = profile.gender;
     if (profile.birthDate !== undefined) input.birthDate = profile.birthDate;
     if (profile.handicap !== undefined) input.handicap = profile.handicap;
     if (profile.strideLength !== undefined) input.strideLength = profile.strideLength;
 
-    const db = await trpcMutate<DbUserProfile>("golf.userProfile.upsert", input);
-    const client = dbUserProfileToClient(db);
-    // Preserve the name from the incoming profile if provided
-    if (profile.name !== undefined) client.name = profile.name;
-    return client;
+    const res = await trpcMutate<DbUserProfileResponse & { profile: DbUserProfile }>(
+      "golf.userProfile.upsert",
+      input,
+    );
+    return dbUserProfileToClient(res.profile, res.name);
   } catch (error) {
     console.error("[api-golf] saveUserProfile error:", error);
     throw error;
@@ -477,7 +492,7 @@ export async function getRounds(): Promise<Round[]> {
   try {
     const list = await trpcQuery<DbRound[]>("golf.rounds.list");
     if (!list || list.length === 0) return [];
-    // The list endpoint does NOT include holes; add empty holes array
+    // The list endpoint does NOT include holes; dbRoundToClient pads to 18 empty holes.
     const rounds = list.map((r) => dbRoundToClient(r));
     // Sort descending by date (same as original AsyncStorage implementation)
     return rounds.sort(
@@ -485,6 +500,27 @@ export async function getRounds(): Promise<Round[]> {
     );
   } catch (error) {
     console.error("[api-golf] getRounds error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Like getRounds, but with holes and putts hydrated. Use for analytics, where
+ * per-hole/per-putt stats (1-putt rate, distance/slope breakdowns) are needed.
+ */
+export async function getRoundsWithHoles(fromDate?: string): Promise<Round[]> {
+  try {
+    const list = await trpcQuery<(DbRound & { holes: DbHole[] })[]>(
+      "golf.rounds.listWithHoles",
+      { fromDate },
+    );
+    if (!list || list.length === 0) return [];
+    const rounds = list.map((r) => dbRoundToClient(r));
+    return rounds.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+  } catch (error) {
+    console.error("[api-golf] getRoundsWithHoles error:", error);
     throw error;
   }
 }
@@ -665,11 +701,14 @@ export async function deleteAllRounds(): Promise<boolean> {
 interface SaveHolesResult {
   roundId: string;
   holes: HoleData[];
+  /** サーバーがDB上の全ホールから再計算したラウンド合計パット */
+  totalPutts: number;
 }
 
 /**
- * saveHolesForRound — upserts all holes (and their putts) for a round.
- * Matches the interface expected by hole-input screen.
+ * saveHolesForRound — upserts all holes (and their putts) for a round in one
+ * server-side transaction. The round's totalPutts is recomputed by the server
+ * from every hole in the DB (not just the ones sent here).
  */
 export async function saveHolesForRound(
   roundId: string,
@@ -681,6 +720,7 @@ export async function saveHolesForRound(
   // Map client HoleData → the shape expected by holes.upsertHoles
   const holesInput = holes.map((hole) => ({
     holeNumber: hole.holeNumber,
+    scoreResult: hole.scoreResult,
     totalPutts: hole.totalPutts,
     putts: hole.putts.map((putt) => ({
       strokeNumber: putt.strokeNumber,
@@ -690,19 +730,15 @@ export async function saveHolesForRound(
       lengthSteps: putt.lengthSteps,
       lengthMeters: putt.lengthMeters,
       distanceMeters: putt.distanceMeters,
-      missedDirection: putt.missedDirection,
-      touch: putt.touch,
       lineUD: putt.lineUD,
       lineLR: putt.lineLR,
-      mental: putt.mental !== null && putt.mental !== undefined
-        ? String(putt.mental)
-        : null,
     })),
   }));
 
   interface UpsertHolesResult {
     roundId: number;
     holes: DbHole[];
+    totalPutts: number;
   }
 
   const result = await trpcMutate<UpsertHolesResult>("golf.holes.upsertHoles", {
@@ -735,5 +771,5 @@ export async function saveHolesForRound(
     );
   });
 
-  return { roundId, holes: allHoles };
+  return { roundId, holes: allHoles, totalPutts: result?.totalPutts ?? 0 };
 }

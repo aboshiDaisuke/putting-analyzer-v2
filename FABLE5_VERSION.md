@@ -26,6 +26,40 @@
 - metro.config.js: 外付けボリュームのAppleDoubleファイル（._*）を除外（バンドルエラー対策）
 - vitest: 同様に ._* を除外
 
+## 2026-09-16 追加分（レビュー指摘の一括修正）
+
+- DB: `holes(roundId, holeNumber)` ユニーク制約・FK索引（0003）、RLS 有効化（0004）
+- ホール保存を1トランザクション化、ラウンド合計をサーバー側で全ホールから再計算
+- 手入力のメートル距離を `distanceMeters` に反映（距離別分析・SG・ラグ分析に載る）
+- OCR: カードのホール番号を尊重し未読分だけ補完（`assignHoleNumbers`）、日付のTZずれ解消
+- 一覧/ホームの平均パット/H の分母をプレー済みホール数に
+- 傾斜未記入を null で保持、ラグ分析は 2nd パット距離を使用
+- ネイティブ OAuth の redirect を `Linking.createURL` で生成（scheme 不一致の解消）
+- `/api/health` から DB 接続情報の露出を除去
+- 認証 context にトークン→ユーザーのキャッシュ、users の同期を1時間に1回に
+- 表示名を `users.name` に保存
+- 未使用の cookie 認証経路・`use-auth`・`server/storage.ts`・`theme-lab` 等を削除
+
+## 2026-09-16 追加分（OCR精度向上・機能追加）
+
+### OCR パイプライン
+- **台形補正**（Web）: `lib/ocr-image-core.ts` が四隅の■マークを検出し、射影変換で正面向き固定サイズの画像に補正
+  （`lib/ocr-image.web.ts`。ネイティブは従来通り縮小のみ `lib/ocr-image.ts`）
+- **枠の画素判定**: 補正画像上の既知座標（`lib/ocr-layout.ts`、HTML を計測して生成）で
+  In / Result / Line の枠の塗りを判定し、`markHints` としてサーバーへ送る。LLM の読みより優先
+- **構造化出力**: Gemini の `responseSchema` で JSON の型・列挙値を強制
+- **お手本画像**: 未記入テンプレート（`server/_core/scorecard-template.ts`）を few-shot として同送
+- **二重読み**: `OCR_VERIFY_MODEL`（既定 gemini-3.1-flash-lite）で並行して読み、食い違いを `conflicts` に
+- **整合性チェック**: `validateOcrHole` で記入ルールとの矛盾を `warnings` に
+- 確認画面は要確認フィールドに旗と背景色、警告一覧、件数を表示。手で直すと解除される
+- 撮影画面は四隅■の目印、撮影直後の前処理バッジ（補正OK / ■未検出 / ブレ?）
+- テスト: `tests/fixtures/` の合成写真で四隅検出〜枠判定を検証（`scripts/ocr/` 参照）
+
+### 機能
+- オフライン保存キュー（`lib/offline-queue.ts`）: 圏外でもホール入力を端末に保留し、接続後に自動送信
+- 距離別カップイン率に PGA ツアー目安の破線を表示
+- プロフィールから CSV エクスポート（1行1パット、BOM 付き）
+
 ## 起動方法
 
 ```bash

@@ -90,6 +90,11 @@ export default function NewRoundScreen() {
 
   const handleCreateRound = async () => {
     setError(null);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(date).getTime())) {
+      setError("日付は YYYY-MM-DD 形式で入力してください");
+      setStep(1);
+      return;
+    }
     if (!courseName) {
       setError("コース名を入力してください");
       return;
@@ -102,7 +107,7 @@ export default function NewRoundScreen() {
     const selectedPutter = putters.find((p) => p.id === selectedPutterId);
 
     const roundData: Omit<Round, "id" | "createdAt" | "updatedAt"> = {
-      date: new Date(date).toISOString(),
+      date, // "YYYY-MM-DD"（Date/toISOString を経由するとタイムゾーンで日付がずれる）
       weather,
       temperature: temperature ? parseFloat(temperature) : undefined,
       windSpeed,

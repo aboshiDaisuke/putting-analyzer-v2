@@ -14,42 +14,19 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import * as ImageManipulator from "expo-image-manipulator";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
+import { prepareScorecardImage, type PreparedImage } from "@/lib/ocr-image";
 
 type ScanStep = "capture" | "preview" | "analyzing" | "done";
 
 interface CapturedImage {
   uri: string;
   base64: string;
-}
-
-// Vercel Serverless Functions の本文上限は 4.5MB。
-// iPhoneのJPEG(quality 0.92, 2560px幅)は3〜6MB、base64で+33%になるため注意。
-// → アップロード前に最大2560px幅・quality 0.92 に圧縮。
-// 2560px: 手書き数字・塗りつぶし○の細部を高解像度で保持（1920→2560でOCR精度向上）
-// 圧縮失敗時は元のbase64にフォールバック。
-async function compressForUpload(uri: string, fallbackBase64: string): Promise<string> {
-  try {
-    const result = await ImageManipulator.manipulateAsync(
-      uri,
-      [{ resize: { width: 2560 } }],
-      {
-        compress: 0.92, // OCR精度向上: JPEGアーティファクト削減で手書き数字・塗りつぶし○の細部を保持
-        format: ImageManipulator.SaveFormat.JPEG,
-        base64: true,
-      }
-    );
-    return result.base64!;
-  } catch (e) {
-    console.warn("Image compression failed, using original:", e);
-    return fallbackBase64;
-  }
 }
 
 export default function ScanCardScreen() {
@@ -64,6 +41,9 @@ export default function ScanCardScreen() {
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisResults, setAnalysisResults] = useState<any[]>([]);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  // 撮影直後にバックグラウンドで前処理（Web: 四隅■マーク検出→台形補正→枠判定→ブレ判定）。
+  // uri をキーに保持し、解析時はこの結果をそのまま送る。
+  const [prepared, setPrepared] = useState<Record<string, PreparedImage>>({});
   const cameraRef = useRef<CameraView>(null);
   // タップフォーカスリング（UIフィードバック用のみ。expo-camera@17にfocusPoint propはない）
   const [focusRing, setFocusRing] = useState<{ x: number; y: number } | null>(null);
@@ -83,6 +63,14 @@ export default function ScanCardScreen() {
 
   const analyzeMutation = trpc.ocr.analyzeScorecard.useMutation();
 
+  const preprocessImages = (images: CapturedImage[]) => {
+    for (const img of images) {
+      void prepareScorecardImage(img.uri, img.base64).then((p) => {
+        setPrepared((prev) => ({ ...prev, [img.uri]: p }));
+      });
+    }
+  };
+
   const handleCapture = async () => {
     if (!cameraRef.current) return;
 
@@ -97,8 +85,11 @@ export default function ScanCardScreen() {
           uri: photo.uri,
           base64: photo.base64,
         };
-        setCapturedImages((prev) => [...prev, newImage]);
-        setCurrentImageIndex(capturedImages.length);
+        setCapturedImages((prev) => {
+          setCurrentImageIndex(prev.length);
+          return [...prev, newImage];
+        });
+        preprocessImages([newImage]);
         setStep("preview");
       }
     } catch (error) {
@@ -136,25 +127,58 @@ export default function ScanCardScreen() {
       }
 
       if (newImages.length > 0) {
-        setCapturedImages((prev) => [...prev, ...newImages]);
-        setCurrentImageIndex(capturedImages.length);
+        setCapturedImages((prev) => {
+          setCurrentImageIndex(prev.length);
+          return [...prev, ...newImages];
+        });
+        preprocessImages(newImages);
         setStep("preview");
       }
     }
   };
 
   const handleRemoveImage = (index: number) => {
-    setCapturedImages((prev) => prev.filter((_, i) => i !== index));
-    if (currentImageIndex >= capturedImages.length - 1) {
-      setCurrentImageIndex(Math.max(0, capturedImages.length - 2));
-    }
-    if (capturedImages.length <= 1) {
-      setStep("capture");
-    }
+    setCapturedImages((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      setCurrentImageIndex((cur) => Math.min(cur, Math.max(0, next.length - 1)));
+      if (next.length === 0) setStep("capture");
+      return next;
+    });
   };
 
   const handleAddMore = () => {
     setStep("capture");
+  };
+
+  // 1枚を解析（前処理 → Geminiへ送信）。撮影順を保つため結果は results[i] に格納する。
+  const analyzeImageAt = async (i: number, results: any[], onDone: () => void) => {
+    try {
+      const img = capturedImages[i];
+      // 撮影直後の前処理結果を使う（まだ無ければここで実行）
+      const p = prepared[img.uri] ?? (await prepareScorecardImage(img.uri, img.base64));
+      // base64を直接Geminiへ送信（Supabase経由不要 → ラウンドトリップ削減で高速化）
+      const analyzeResult = await analyzeMutation.mutateAsync({
+        base64: p.base64,
+        mimeType: p.mimeType,
+        rectified: p.rectified,
+        markHints: p.markHints,
+      });
+      results[i] =
+        analyzeResult.success && analyzeResult.data
+          ? {
+              ...analyzeResult.data,
+              conflicts: analyzeResult.conflicts,
+              warnings: analyzeResult.warnings,
+              rectified: analyzeResult.meta?.rectified ?? p.rectified,
+            }
+          : { error: true, index: i + 1 };
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error(`Image ${i + 1} analysis failed:`, error);
+      results[i] = { error: true, index: i + 1, message: errMsg };
+    } finally {
+      onDone();
+    }
   };
 
   const handleAnalyze = async () => {
@@ -163,39 +187,37 @@ export default function ScanCardScreen() {
     setStep("analyzing");
     setAnalysisProgress(0);
     setAnalysisError(null);
-    const results: any[] = [];
 
-    for (let i = 0; i < capturedImages.length; i++) {
-      try {
-        setAnalysisProgress((i / capturedImages.length) * 100);
+    const total = capturedImages.length;
+    const results: any[] = new Array(total);
+    let completed = 0;
+    const markDone = () => {
+      completed += 1;
+      setAnalysisProgress((completed / total) * 100);
+    };
 
-        // 1. 画像を圧縮（Vercel 4.5MB 上限対策: 2560px幅・quality 0.92）
-        const compressedBase64 = await compressForUpload(capturedImages[i].uri, capturedImages[i].base64);
-
-        // 2. base64を直接Geminiへ送信（Supabase経由不要 → ラウンドトリップ削減で高速化）
-        const analyzeResult = await analyzeMutation.mutateAsync({
-          base64: compressedBase64,
-          mimeType: "image/jpeg",
-        });
-
-        if (analyzeResult.success && analyzeResult.data) {
-          results.push(analyzeResult.data);
-        } else {
-          results.push({ error: true, index: i + 1 });
+    // 同時実行数を制限したワーカープールで並列解析（APIレート制限に配慮しつつ高速化）。
+    // 高精度モデルは1枚あたり時間がかかるため、逐次より体感が大幅に改善する。
+    const CONCURRENCY = 3;
+    let cursor = 0;
+    const workers = Array.from(
+      { length: Math.min(CONCURRENCY, total) },
+      async () => {
+        while (cursor < total) {
+          const i = cursor;
+          cursor += 1;
+          await analyzeImageAt(i, results, markDone);
         }
-      } catch (error) {
-        const errMsg = error instanceof Error ? error.message : String(error);
-        console.error(`Image ${i + 1} analysis failed:`, error);
-        results.push({ error: true, index: i + 1, message: errMsg });
       }
-    }
+    );
+    await Promise.all(workers);
 
     setAnalysisProgress(100);
     setAnalysisResults(results);
     setStep("done");
 
     // 結果画面に遷移
-    const validResults = results.filter((r) => !r.error);
+    const validResults = results.filter((r) => r && !r.error);
     if (validResults.length > 0) {
       // OCR結果をパラメータとして渡す（roundIdがあれば一緒に渡す）
       router.push({
@@ -208,7 +230,7 @@ export default function ScanCardScreen() {
     } else {
       // Alert.alert はWebで正常動作しないためインライン表示に切り替え
       const errDetails = results
-        .filter((r) => r.error && r.message)
+        .filter((r) => r && r.error && r.message)
         .map((r) => r.message)
         .join("\n");
       setAnalysisError(
@@ -222,6 +244,7 @@ export default function ScanCardScreen() {
 
   const resetScan = () => {
     setCapturedImages([]);
+    setPrepared({});
     setCurrentImageIndex(0);
     setAnalysisProgress(0);
     setAnalysisResults([]);
@@ -352,6 +375,8 @@ export default function ScanCardScreen() {
                       #{index + 1}
                     </Text>
                   </View>
+                  {/* 前処理の状態: 四隅■マークで補正できたか / ブレの疑い */}
+                  <PrepBadge prepared={prepared[img.uri]} colors={colors} />
                 </View>
               ))}
 
@@ -389,10 +414,10 @@ export default function ScanCardScreen() {
                 読み取りのコツ
               </Text>
               <Text className="text-muted text-sm leading-relaxed">
-                ・四隅の■マークが写るように撮影{"\n"}
-                ・明るい場所で影が入らないように{"\n"}
-                ・カードが平らになるように置く{"\n"}
-                ・数字は枠内に丁寧に記入
+                ・四隅の■マークが4つとも写ると自動で正面向きに補正され、チェック枠は画像から直接判定します{"\n"}
+                ・「■未検出」の写真は補正なしで読み取るため精度が下がります。撮り直しをおすすめします{"\n"}
+                ・明るい場所で影が入らないように、カードは平らに{"\n"}
+                ・数字は枠内に1桁ずつ丁寧に
               </Text>
             </View>
           </View>
@@ -554,6 +579,27 @@ export default function ScanCardScreen() {
                 <View style={{ position: "absolute", bottom: -1, left: -1, width: 32, height: 32, borderBottomWidth: 4, borderLeftWidth: 4, borderColor: "#FFF" }} />
                 {/* 右下コーナー */}
                 <View style={{ position: "absolute", bottom: -1, right: -1, width: 32, height: 32, borderBottomWidth: 4, borderRightWidth: 4, borderColor: "#FFF" }} />
+                {/* カード四隅の■マークを合わせる目印（カード上の位置に相当する内側4点） */}
+                {[
+                  { top: "3%", left: "4%" },
+                  { top: "3%", right: "4%" },
+                  { bottom: "3%", left: "4%" },
+                  { bottom: "3%", right: "4%" },
+                ].map((pos, i) => (
+                  <View
+                    key={i}
+                    pointerEvents="none"
+                    style={{
+                      position: "absolute",
+                      width: 14,
+                      height: 14,
+                      borderWidth: 2,
+                      borderColor: "#FFD700",
+                      backgroundColor: "rgba(255,215,0,0.25)",
+                      ...(pos as object),
+                    }}
+                  />
+                ))}
               </View>
 
               {/* 右暗いエリア */}
@@ -563,7 +609,7 @@ export default function ScanCardScreen() {
             {/* 下部 暗いエリア + 説明テキスト */}
             <View style={{ flex: 1, backgroundColor: DARK, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }}>
               <Text style={{ color: "#FFFFFF", textAlign: "center", fontSize: 14, fontWeight: "500", lineHeight: 22 }}>
-                カード全体が枠内に収まるように{"\n"}位置を合わせてシャッターを押してください
+                カードの四隅の■を黄色い目印に合わせて{"\n"}シャッターを押してください
               </Text>
               <Text style={{ color: "rgba(255,255,255,0.55)", textAlign: "center", fontSize: 12, marginTop: 6 }}>
                 ぼやける場合は画面をタップしてピントを合わせてください
@@ -690,6 +736,45 @@ export default function ScanCardScreen() {
           </View>
         </View>
       </CameraView>
+    </View>
+  );
+}
+
+/** 撮影画像の前処理状態バッジ（サムネイル右下） */
+function PrepBadge({
+  prepared,
+  colors,
+}: {
+  prepared: PreparedImage | undefined;
+  colors: ReturnType<typeof useColors>;
+}) {
+  let label = "処理中…";
+  let bg = "rgba(0,0,0,0.55)";
+  if (prepared) {
+    if (prepared.rectified) {
+      label = prepared.blur?.isBlurry ? "補正OK・ブレ?" : "補正OK";
+      bg = prepared.blur?.isBlurry ? colors.warning : colors.success;
+    } else {
+      label = "■未検出";
+      bg = colors.warning;
+    }
+  }
+  return (
+    <View
+      style={{
+        position: "absolute",
+        bottom: 4,
+        right: 4,
+        backgroundColor: bg,
+        borderRadius: 8,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        maxWidth: 88,
+      }}
+    >
+      <Text style={{ color: "#FFF", fontSize: 10, fontWeight: "700" }} numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }

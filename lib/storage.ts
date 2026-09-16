@@ -21,6 +21,13 @@ import {
 } from "./types";
 
 import * as ApiGolf from "./api-golf";
+import {
+  enqueueHoleSave,
+  flushPendingHoleSaves,
+  getPendingHoleSaveCount,
+  getPendingHolesForRound,
+  isNetworkError,
+} from "./offline-queue";
 
 // ─── ID generator (kept for backward compat; not used for server data) ────────
 
@@ -35,15 +42,17 @@ export async function getUserProfile(): Promise<UserProfile | null> {
   try {
     const profile = await ApiGolf.getUserProfile();
     if (profile) {
-      // Also read local name from AsyncStorage and merge (name isn't in the DB profile)
-      try {
-        const local = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
-        if (local) {
-          const localProfile: UserProfile = JSON.parse(local);
-          if (localProfile.name) profile.name = localProfile.name;
+      // 名前はサーバー(users.name)が正。未設定なら旧バージョンで端末に保存した名前を補う。
+      if (!profile.name) {
+        try {
+          const local = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
+          if (local) {
+            const localProfile: UserProfile = JSON.parse(local);
+            if (localProfile.name) profile.name = localProfile.name;
+          }
+        } catch {
+          // Ignore AsyncStorage read errors
         }
-      } catch {
-        // Ignore AsyncStorage read errors
       }
       return profile;
     }
@@ -95,8 +104,7 @@ export async function saveUserProfile(
   // Best-effort server sync (non-fatal on failure)
   try {
     const serverProfile = await ApiGolf.saveUserProfile(profile);
-    // Keep the locally-stored name and merge server data
-    return { ...serverProfile, name: localProfile.name };
+    return { ...serverProfile, name: serverProfile.name || localProfile.name };
   } catch {
     // Server unavailable — return local data
     return localProfile;
@@ -152,6 +160,10 @@ export async function getRounds(): Promise<Round[]> {
   return ApiGolf.getRounds();
 }
 
+export async function getRoundsWithHoles(fromDate?: string): Promise<Round[]> {
+  return ApiGolf.getRoundsWithHoles(fromDate);
+}
+
 export async function getRound(id: string): Promise<Round | null> {
   return ApiGolf.getRound(id);
 }
@@ -183,11 +195,66 @@ export async function deleteAllRounds(): Promise<boolean> {
 
 // ─── Holes ────────────────────────────────────────────────────────────────────
 
+export type SaveHolesOutcome = {
+  roundId: string;
+  holes: HoleData[];
+  totalPutts: number;
+  /** true = オフラインのため端末に保留した（接続後に自動送信） */
+  queued?: boolean;
+};
+
+/**
+ * ホール保存。サーバーに届かないとき（オフライン等）は端末のキューに積み、
+ * ローカル計算の結果を返して入力を続けられるようにする。
+ */
 export async function saveHolesForRound(
   roundId: string,
   holes: HoleData[],
-): Promise<{ roundId: string; holes: HoleData[] }> {
-  return ApiGolf.saveHolesForRound(roundId, holes);
+): Promise<SaveHolesOutcome> {
+  // 先に溜まっている保存があれば流す（順序を保つため）
+  await flushPendingHoleSaves(ApiGolf.saveHolesForRound).catch(() => undefined);
+  try {
+    return await ApiGolf.saveHolesForRound(roundId, holes);
+  } catch (error) {
+    if (!isNetworkError(error)) throw error;
+    await enqueueHoleSave(roundId, holes);
+    const padded: HoleData[] = Array.from({ length: 18 }, (_, i) => {
+      const num = i + 1;
+      return (
+        holes.find((h) => h.holeNumber === num) ?? {
+          holeNumber: num,
+          scoreResult: "par",
+          totalPutts: 0,
+          putts: [],
+        }
+      );
+    });
+    return {
+      roundId,
+      holes: padded,
+      totalPutts: padded.reduce((sum, h) => sum + h.totalPutts, 0),
+      queued: true,
+    };
+  }
+}
+
+/** 保留中の保存を再送する（画面のフォーカス時などに呼ぶ） */
+export async function syncPendingHoleSaves(): Promise<{ sent: number; remaining: number }> {
+  return flushPendingHoleSaves(ApiGolf.saveHolesForRound);
+}
+
+export async function pendingHoleSaveCount(): Promise<number> {
+  return getPendingHoleSaveCount();
+}
+
+/** 保留中のホールがあれば、サーバーから取得したラウンドに重ねて返す（表示用） */
+export async function getRoundWithPending(id: string): Promise<Round | null> {
+  const round = await ApiGolf.getRound(id);
+  if (!round) return null;
+  const pending = await getPendingHolesForRound(id);
+  if (!pending) return round;
+  const holes = round.holes.map((h) => pending.find((p) => p.holeNumber === h.holeNumber) ?? h);
+  return { ...round, holes, totalPutts: holes.reduce((s, h) => s + h.totalPutts, 0) };
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────

@@ -9,9 +9,9 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { cardShadow } from "@/lib/card-shadow";
 import { hapticSuccess } from "@/lib/haptics";
-import { getRounds, deleteRound } from "@/lib/storage";
+import { getRounds, deleteRound, syncPendingHoleSaves } from "@/lib/storage";
 import { formatDate } from "@/lib/analytics";
-import { Round, LABELS } from "@/lib/types";
+import { Round, LABELS, countPlayedHoles } from "@/lib/types";
 
 export default function RoundsScreen() {
   const router = useRouter();
@@ -21,6 +21,7 @@ export default function RoundsScreen() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   const loadRounds = useCallback(async () => {
+    await syncPendingHoleSaves().catch(() => undefined);
     const data = await getRounds();
     setRounds(data);
   }, []);
@@ -44,7 +45,9 @@ export default function RoundsScreen() {
     loadRounds();
   }, [loadRounds]);
 
-  const renderItem = ({ item }: { item: Round }) => (
+  const renderItem = ({ item }: { item: Round }) => {
+    const played = countPlayedHoles(item);
+    return (
     <TouchableOpacity
       className="bg-surface rounded-xl p-4 mb-3 border border-border"
       style={cardShadow}
@@ -68,8 +71,11 @@ export default function RoundsScreen() {
           <Text className="text-3xl font-bold text-primary">{item.totalPutts}</Text>
           <Text className="text-xs text-muted">パット</Text>
           <Text className="text-sm text-muted mt-1">
-            {(item.totalPutts / item.holes.length).toFixed(2)}/H
+            {played > 0 ? `${(item.totalPutts / played).toFixed(2)}/H` : "未入力"}
           </Text>
+          {played > 0 && played < 18 && (
+            <Text className="text-xs text-muted">{played}H</Text>
+          )}
         </View>
       </View>
       <View className="flex-row items-center justify-between mt-3 pt-3 border-t border-border">
@@ -96,7 +102,8 @@ export default function RoundsScreen() {
         />
       )}
     </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <ScreenContainer className="p-4">
