@@ -52,11 +52,10 @@
   GitHub のリモート名は `github`（`origin` は別物）
 - 落ちた原因: `server/_core/context.ts` の `import { decodeJwt } from "jose"`（ESM 専用）→ Vercel で ERR_REQUIRE_ESM。
   修正 `1496860`（JWT の exp を自前で読む）を作業ブランチにプッシュ済み。プレビューの health / golf.rounds.list は 200
-- **未解決: プレビューで `ocr.analyzeCard` が 61.5 秒で HTTP 504**（`vercel.json` の `maxDuration: 60` 超過）
-- 未コミット: `server/card-ocr.ts` に `OCR_THINKING`（既定 low）。low でもきれいな3枚は 275/275 だが**所要 39〜156 秒で速くならない**。
-  悪条件セット（`FIXTURE_DIR=tests/fixtures/stress`）は未測定。
-  次の案: `vercel.json` の api の `maxDuration` を 300 に上げる＋所要時間の内訳（Gemini 待ち）を計測。
-  直ったら作業ブランチから main へ再度マージ（revert の revert が必要）
+- **OCR の 504 対策をプッシュ済み（`6b6081c`）**: 思考量を minimal（`OCR_THINKING`、評価 275/275・1枚 30〜43 秒。low でも 89 秒だった）、
+  `vercel.json` の api の `maxDuration` を 300（プロジェクトは Fluid compute で上限 300 秒）。flash-lite 単独は 10〜17 秒だが 271/275
+- **次回やること**: ① プレビューで `ocr.analyzeCard` が 200 になるか確認（未確認。`scripts/_tmp/mk-req.ts` は環境変数 E2E_EMAIL / E2E_PASSWORD が必要＝.env には無い）
+  ② 問題なければ main に再マージ（revert の revert が必要）→ 本番で通し確認・停止防止 cron の有効化を確認
 - プレビューは保護付きなので `vercel curl` で叩く。その際 Vercel に「Protection Bypass for Automation」トークンが自動作成された（不要なら Settings → Deployment Protection で削除）
 - `scripts/_tmp/` は検証用の一時スクリプト（`prod-ocr.ts` で本番/プレビューの OCR 所要時間を測れる。コミットしない・作業後に削除）
 
