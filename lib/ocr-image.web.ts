@@ -1,30 +1,22 @@
 /**
  * ocr-image.web.ts（Web 用）
  *
- * 撮影したスコアカード画像を Canvas で読み込み、
- *   1. 四隅の■マークを検出して台形補正（正面から見た固定サイズの画像にする）
- *   2. 補正画像上の既知座標にあるチェック枠を画素で判定（markHints）
- *   3. ラプラシアン分散でブレを判定
- * してから JPEG(base64) にする。マークが見つからなければ従来通りの縮小のみ。
+ * 撮影したカード画像を Canvas で読み込み、端末でも
+ *   四隅■マーク検出 → 向き（0/90/180/270°）→ 台形補正 → OUT/IN 判定 → ブレ判定
+ * をしてから補正済み JPEG（1750×1050）を送る。撮影直後に「補正OK・OUT」のように結果を見せられ、
+ * 通信量も減る。サーバーは受け取った画像に同じ処理をもう一度かける（補正済みでも四隅マークは写っている）。
  */
-import type { OcrMarkHints, SectionMarkHints } from "./ocr-utils";
-import { SCORECARD_LAYOUT } from "./ocr-layout";
-import {
-  detectCellMarks,
-  laplacianVariance,
-  rectifyScorecard,
-  rgbaToGray,
-  type CellMarks,
-  type RgbaImage,
-} from "./ocr-image-core";
-import { MAX_UPLOAD_BASE64_LEN, type PreparedImage } from "./ocr-image";
+import type { RgbaImage } from "./ocr-image-core";
+import { laplacianVariance, rgbaToGray } from "./ocr-image-core";
+import { processCardPhoto } from "./scorecard/process";
+// "./ocr-image" は Web ではこのファイル自身に解決されるため、共有部分は別ファイルから読む
+import { MAX_UPLOAD_BASE64_LEN, type PreparedImage } from "./ocr-image-shared";
 
-export type { PreparedImage } from "./ocr-image";
+export type { PreparedImage } from "./ocr-image-shared";
 
 // 検出・補正に使う最大の長辺。大きいほど精度は上がるが処理時間が延びる
-const MAX_PROCESS_LONG_SIDE = 2200;
-// ラプラシアン分散がこれ未満なら「ぼやけている可能性」を出す（補正後画像・1000px基準）
-const BLUR_VARIANCE_THRESHOLD = 30;
+const MAX_PROCESS_LONG_SIDE = 2400;
+const BLUR_VARIANCE_THRESHOLD = 25;
 
 function loadImage(uri: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -53,19 +45,8 @@ function rgbaToJpegBase64(img: RgbaImage, quality: number): string {
   canvas.width = img.width;
   canvas.height = img.height;
   const ctx = canvas.getContext("2d")!;
-  const imageData = new ImageData(new Uint8ClampedArray(img.data), img.width, img.height);
-  ctx.putImageData(imageData, 0, 0);
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
   return canvas.toDataURL("image/jpeg", quality).split(",")[1] ?? "";
-}
-
-function toHints(marks: CellMarks): OcrMarkHints {
-  const section = (s: CellMarks["sections"][number]): SectionMarkHints => ({
-    cupIn: s.cupIn.marked === undefined ? "unsure" : s.cupIn.marked,
-    result: s.result.index === undefined ? "unsure" : s.result.index,
-    lineUD: s.lineUD.index === undefined ? "unsure" : s.lineUD.index,
-    lineLR: s.lineLR.index === undefined ? "unsure" : s.lineLR.index,
-  });
-  return { sections: [section(marks.sections[0]), section(marks.sections[1]), section(marks.sections[2])] };
 }
 
 /** 上限を超えたら品質を落として収める */
@@ -81,22 +62,17 @@ export async function prepareScorecardImage(uri: string, fallbackBase64: string)
   try {
     const img = await loadImage(uri);
     const photo = drawToRgba(img, MAX_PROCESS_LONG_SIDE);
-    const rectified = rectifyScorecard(photo, SCORECARD_LAYOUT);
-
-    if (rectified) {
-      const gray = rgbaToGray(rectified.image);
-      const marks = detectCellMarks(gray, SCORECARD_LAYOUT, rectified.frame);
-      const variance = laplacianVariance(gray);
+    const processed = processCardPhoto(photo);
+    if (processed) {
       return {
-        base64: encodeWithinLimit(rectified.image),
+        base64: encodeWithinLimit(processed.image),
         mimeType: "image/jpeg",
         rectified: true,
-        markHints: toHints(marks),
-        blur: { variance, isBlurry: variance < BLUR_VARIANCE_THRESHOLD },
+        side: processed.marks.side,
+        blur: processed.blur,
       };
     }
-
-    // マークが見つからない: 元画像を縮小して送る（従来動作）
+    // マークが見つからない: 元画像を縮小して送る（サーバーでも検出を試み、だめなら LLM だけで読む）
     const variance = laplacianVariance(rgbaToGray(photo));
     return {
       base64: encodeWithinLimit(photo),

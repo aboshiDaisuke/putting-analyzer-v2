@@ -1,32 +1,22 @@
 /**
  * ocr-image.ts（ネイティブ用）
  *
- * 撮影したスコアカード画像を OCR 送信用に整える。
- * ネイティブでは Canvas が使えないため台形補正・枠判定は行わず、
+ * 撮影したカード画像を OCR 送信用に整える。
+ * ネイティブでは Canvas が使えないため端末では補正せず、
  * Vercel の本文上限（4.5MB）に収まるよう段階的に圧縮するだけ。
- * Web 版は ocr-image.web.ts（四隅マーク検出 → 台形補正 → 枠判定 → ブレ判定）。
+ * 向き・台形補正・枠の画素判定はサーバー（server/_core/card-image.ts）が同じ処理を行う。
+ * Web 版は ocr-image.web.ts（端末でも補正して、その場で「補正OK / OUT・IN」を表示する）。
  */
 import * as ImageManipulator from "expo-image-manipulator";
-import type { OcrMarkHints } from "./ocr-utils";
+import { MAX_UPLOAD_BASE64_LEN, type PreparedImage } from "./ocr-image-shared";
 
-export type PreparedImage = {
-  base64: string;
-  mimeType: "image/jpeg";
-  /** 四隅マークで台形補正できたか */
-  rectified: boolean;
-  /** 補正画像から画素で判定したチェック枠（補正できた場合のみ） */
-  markHints?: OcrMarkHints;
-  /** ブレ判定（Webのみ）。variance が小さいほどぼやけている */
-  blur?: { variance: number; isBlurry: boolean };
-};
-
-// 送信する base64 文字列長 ≒ 本文バイト数。上限を安全側に 4.0MB とする。
-export const MAX_UPLOAD_BASE64_LEN = 4_000_000;
+export { MAX_UPLOAD_BASE64_LEN, type PreparedImage } from "./ocr-image-shared";
 
 /** 精度優先の順に試行し、最初に上限内へ収まったものを採用する */
 export async function compressForUpload(uri: string, fallbackBase64: string): Promise<string> {
+  // サーバー側で長辺 2400px に縮小して処理するので、それ以上は送らない
   const attempts: { width: number; compress: number }[] = [
-    { width: 2560, compress: 0.92 },
+    { width: 2400, compress: 0.9 },
     { width: 2048, compress: 0.85 },
     { width: 1600, compress: 0.8 },
   ];

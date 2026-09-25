@@ -1,17 +1,16 @@
 /**
  * ocr-image-core.ts
  *
- * スコアカード写真の前処理（純粋関数・DOM/Canvas 非依存）。
+ * スコアカード写真の前処理の汎用部品（純粋関数・DOM/Canvas 非依存）。
  *   1. 四隅の■マーク検出       findCornerMarkers
  *   2. 射影変換（台形補正）      solveHomography / warpPerspective
- *   3. チェック枠の塗り判定      detectCellMarks
+ *   3. 枠内の暗い画素の割合      cellDarkRatio
  *   4. ブレ判定                 laplacianVariance
+ * カード固有の処理（向き・面の判定、枠の判定）は lib/scorecard/process.ts。
  *
  * ピクセル配列だけを扱うので、Web（Canvas）でもテスト（Node）でも同じコードが動く。
  * 座標系: 画像は左上原点、x 右、y 下。
  */
-
-import type { NormRect, ScorecardLayout } from "./ocr-layout";
 
 export type GrayImage = { width: number; height: number; data: Uint8ClampedArray };
 export type RgbaImage = { width: number; height: number; data: Uint8ClampedArray };
@@ -116,7 +115,7 @@ type Blob = {
 };
 
 /** 二値画像（1 = 暗）の連結成分をラベリングして矩形情報を返す */
-function connectedComponents(bin: Uint8Array, w: number, h: number, maxBlobs = 4000): Blob[] {
+export function connectedComponents(bin: Uint8Array, w: number, h: number, maxBlobs = 4000): Blob[] {
   const visited = new Uint8Array(w * h);
   const blobs: Blob[] = [];
   const stack: number[] = [];
@@ -165,6 +164,8 @@ function isConvexClockwise(q: Quad): boolean {
 
 export type MarkerDetection = {
   quad: Quad;
+  /** 候補比較用のスコア（大きいほどカードらしい） */
+  score: number;
   /** 検出に使った縮小画像上でのマーク平均サイズ(px) */
   markerSize: number;
 };
@@ -260,6 +261,7 @@ export function findCornerMarkers(gray: GrayImage, expectedAspect: number): Mark
   if (!best) return null;
   return {
     quad: best.quad.map((p) => ({ x: (p.x + 0.5) * scale, y: (p.y + 0.5) * scale })) as Quad,
+    score: best.score * scale * scale,
     markerSize: best.markerSize * scale,
   };
 }
@@ -349,52 +351,6 @@ export function warpPerspective(src: RgbaImage, H: number[], outW: number, outH:
   return { width: outW, height: outH, data: out };
 }
 
-// ─── 正規化座標 ⇔ 補正画像ピクセル ──────────────────────────────────────────
-
-/** 補正画像の出力サイズ（マーク中心矩形の幅を基準にした px） */
-export const CANONICAL_MARKER_WIDTH_PX = 1000;
-
-export type CanonicalFrame = {
-  width: number;
-  height: number;
-  /** 正規化座標（マーク基準）→ 補正画像ピクセル */
-  toPx: (nx: number, ny: number) => Point;
-  /** 四隅マーク中心の補正画像上の位置（TL,TR,BR,BL） */
-  markerQuad: Quad;
-};
-
-/** レイアウトから補正画像のサイズと座標変換を作る（カード全体が収まる範囲） */
-export function canonicalFrame(layout: ScorecardLayout): CanonicalFrame {
-  const S = CANONICAL_MARKER_WIDTH_PX;
-  const cb = layout.cardBounds;
-  const width = Math.round(cb.w * S);
-  const height = Math.round(cb.h * S * layout.markerRectAspect);
-  const toPx = (nx: number, ny: number): Point => ({
-    x: (nx - cb.x) * S,
-    y: (ny - cb.y) * S * layout.markerRectAspect,
-  });
-  const markerQuad: Quad = [toPx(0, 0), toPx(1, 0), toPx(1, 1), toPx(0, 1)];
-  return { width, height, toPx, markerQuad };
-}
-
-/**
- * 写真 → 補正画像 の変換を一括で行う。
- * @returns 補正画像。マークが見つからなければ null。
- */
-export function rectifyScorecard(
-  photo: RgbaImage,
-  layout: ScorecardLayout,
-): { image: RgbaImage; frame: CanonicalFrame; markers: Quad } | null {
-  const gray = rgbaToGray(photo);
-  const detection = findCornerMarkers(gray, layout.markerRectAspect);
-  if (!detection) return null;
-  const frame = canonicalFrame(layout);
-  const H = solveHomography(frame.markerQuad, detection.quad); // 出力 → 入力
-  if (!H) return null;
-  const image = warpPerspective(photo, H, frame.width, frame.height);
-  return { image, frame, markers: detection.quad };
-}
-
 // ─── チェック枠の塗り判定 ────────────────────────────────────────────────────
 
 /** 矩形（px）内側の暗い画素の割合。inset は枠線を避けるための内側マージン比 */
@@ -421,93 +377,3 @@ export function cellDarkRatio(
   return n > 0 ? dark / n : 0;
 }
 
-/** 排他選択（1つだけ印をつける枠群）の判定結果 */
-export type ChoiceMark = {
-  ratios: number[];
-  /** 選ばれた index。印なし = null。あいまい = undefined（LLM に委ねる） */
-  index: number | null | undefined;
-};
-export type CheckMark = { ratio: number; marked: boolean | undefined };
-
-export type SectionMarks = {
-  cupIn: CheckMark;
-  result: ChoiceMark;
-  lineUD: ChoiceMark;
-  lineLR: ChoiceMark;
-};
-
-export type CellMarks = {
-  /** 紙の白の推定値（0-255）と使用した暗さしきい値 */
-  paperWhite: number;
-  darkThreshold: number;
-  sections: [SectionMarks, SectionMarks, SectionMarks];
-};
-
-// 印あり/なしのしきい値。空欄でも枠線の滲みで数%は暗くなるため余裕を持たせる
-export const MARK_ON_RATIO = 0.12;
-export const MARK_OFF_RATIO = 0.05;
-
-function judgeCheck(ratio: number): boolean | undefined {
-  if (ratio >= MARK_ON_RATIO) return true;
-  if (ratio <= MARK_OFF_RATIO) return false;
-  return undefined;
-}
-
-function judgeChoice(ratios: number[]): number | null | undefined {
-  let best = -1;
-  let bestRatio = -1;
-  let second = -1;
-  for (let i = 0; i < ratios.length; i++) {
-    if (ratios[i] > bestRatio) {
-      second = bestRatio;
-      bestRatio = ratios[i];
-      best = i;
-    } else if (ratios[i] > second) {
-      second = ratios[i];
-    }
-  }
-  if (bestRatio <= MARK_OFF_RATIO) return null; // 全て空欄
-  if (bestRatio < MARK_ON_RATIO) return undefined; // 薄すぎて判断できない
-  if (second > MARK_OFF_RATIO && second > bestRatio * 0.5) return undefined; // 2つ以上に印
-  return best;
-}
-
-/** 補正済み画像のグレースケールからチェック枠を判定する */
-export function detectCellMarks(grayRect: GrayImage, layout: ScorecardLayout, frame: CanonicalFrame): CellMarks {
-  // 紙の白: 画素値の中央値付近（カードの大半は白）
-  const hist = new Uint32Array(256);
-  for (let i = 0; i < grayRect.data.length; i++) hist[grayRect.data[i]]++;
-  let acc = 0;
-  let paperWhite = 255;
-  for (let t = 0; t < 256; t++) {
-    acc += hist[t];
-    if (acc >= grayRect.data.length * 0.5) {
-      paperWhite = t;
-      break;
-    }
-  }
-  const darkThreshold = Math.max(40, Math.round(paperWhite * 0.6));
-
-  const rectPx = (r: NormRect) => {
-    const p = frame.toPx(r.x, r.y);
-    const q = frame.toPx(r.x + r.w, r.y + r.h);
-    return { x: p.x, y: p.y, w: q.x - p.x, h: q.y - p.y };
-  };
-  const ratio = (r: NormRect) => cellDarkRatio(grayRect, rectPx(r), darkThreshold);
-  const choice = (rects: NormRect[]): ChoiceMark => {
-    const ratios = rects.map(ratio);
-    return { ratios, index: judgeChoice(ratios) };
-  };
-
-  const sections = layout.sections.map((sec) => {
-    const cupRatio = ratio(sec.cupIn);
-    return {
-      cupIn: { ratio: cupRatio, marked: judgeCheck(cupRatio) },
-      result: choice(sec.result),
-      lineUD: choice(sec.lineUD),
-      lineLR: choice(sec.lineLR),
-    };
-  }) as [SectionMarks, SectionMarks, SectionMarks];
-
-  return { paperWhite, darkThreshold, sections };
-}

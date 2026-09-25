@@ -19,7 +19,7 @@ export default function TabLayout() {
   if (!session) return <Redirect href="/login" />; // 未ログイン
 
   const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 8);
-  const tabBarHeight = 56 + bottomPadding;
+  const tabBarHeight = 62 + bottomPadding;
 
   return (
     <Tabs
@@ -29,12 +29,13 @@ export default function TabLayout() {
         headerShown: false,
         tabBarButton: Platform.OS === "web" ? undefined : HapticTab,
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "600",
+          fontSize: 12,
+          lineHeight: 16,
+          fontWeight: "700",
           letterSpacing: 0.2,
         },
         tabBarStyle: {
-          paddingTop: 8,
+          paddingTop: 6,
           paddingBottom: bottomPadding,
           height: tabBarHeight,
           backgroundColor: colors.surface,
@@ -54,28 +55,28 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "ホーム",
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={25} name="house.fill" color={color} />,
         }}
       />
       <Tabs.Screen
         name="rounds"
         options={{
           title: "ラウンド",
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="list.bullet" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={25} name="list.bullet" color={color} />,
         }}
       />
       <Tabs.Screen
         name="analytics"
         options={{
           title: "分析",
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="chart.bar.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={25} name="chart.bar.fill" color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "プロフィール",
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={25} name="person.fill" color={color} />,
         }}
       />
     </Tabs>

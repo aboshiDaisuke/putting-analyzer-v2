@@ -61,6 +61,8 @@ export const slopeLeftRightEnum = pgEnum("slopeLeftRight", [
   "right_left",
 ]);
 
+export const missLengthEnum = pgEnum("missLength", ["short", "long"]);
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 export const users = pgTable("users", {
@@ -198,7 +200,7 @@ export const putts = pgTable("putts", {
   strokeNumber: integer("strokeNumber").notNull(), // 1, 2, 3
   cupIn: boolean("cupIn").default(false).notNull(),
   distPrev: integer("distPrev"), // 前パットからの残り距離(yd)
-  result: scoreResultEnum("result"),
+  result: scoreResultEnum("result"), // このパットが入れば何のスコアか（バーディパット＝birdie）
   lengthSteps: integer("lengthSteps"), // 歩数
   lengthMeters: real("lengthMeters"), // メートル直入力
   distanceMeters: real("distanceMeters"), // 計算済み距離(m)
@@ -207,6 +209,7 @@ export const putts = pgTable("putts", {
   lineUD: slopeUpDownEnum("lineUD"),
   lineLR: slopeLeftRightEnum("lineLR"),
   mental: varchar("mental", { length: 4 }), // "P", "1"-"5", "N"
+  missLength: missLengthEnum("missLength"), // 外れたときショート/オーバー（カード v3 の「短/長」）
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (t) => [index("putts_holeId_idx").on(t.holeId)]);

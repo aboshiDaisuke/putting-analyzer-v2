@@ -25,6 +25,8 @@ const HEADER = [
   "distPrevYd",
   "lineUD",
   "lineLR",
+  "puttFor",
+  "missLength",
 ];
 
 function csvCell(v: unknown): string {
@@ -61,6 +63,8 @@ export function buildRoundsCsv(rounds: Round[]): string {
             putt?.distPrev ?? "",
             putt?.lineUD ? LABELS.slopeUpDownShort[putt.lineUD] : "",
             putt?.lineLR ? LABELS.slopeLeftRightShort[putt.lineLR] : "",
+            putt?.result ? LABELS.scoreResultShort[putt.result] : "",
+            putt?.missLength === "short" ? "short" : putt?.missLength === "long" ? "long" : "",
           ]
             .map(csvCell)
             .join(","),

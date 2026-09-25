@@ -1,300 +1,269 @@
-import { useState, useEffect } from "react";
-import { ScrollView, Text, View, TouchableOpacity } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
+/**
+ * ラウンド詳細。結論（損得・パット数の内訳）→ グリーンマップ → カードと同じ並びの表。
+ * 未入力のラウンドでは「カードを撮影」「手入力」を大きく出す。
+ */
+import { useCallback, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { ConfirmBox } from "@/components/ui/confirm-box";
+import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { GreenMapCard } from "@/components/analysis/green-map-card";
+import { useDivergingColors } from "@/components/analysis/charts";
+import { formatStrokes } from "@/components/analysis/ui";
+import { HoleTable } from "@/components/round/hole-table";
 import { useColors } from "@/hooks/use-colors";
-import { cardShadow } from "@/lib/card-shadow";
+import { useBaseline } from "@/hooks/use-baseline";
+import { shadowSm } from "@/lib/card-shadow";
 import { hapticSuccess } from "@/lib/haptics";
-import { getRoundWithPending, deleteRound, resetRoundHoles } from "@/lib/storage";
-import { formatDate, getPlayedHoles } from "@/lib/analytics";
-import { Round, LABELS } from "@/lib/types";
+import { BASELINES, greenPoints, holeObservations, sgSummary } from "@/lib/putting-stats";
+import { deleteRound, getRoundWithPending, getUserProfile, resetRoundHoles } from "@/lib/storage";
+import { LABELS, type Round } from "@/lib/types";
 
 export default function RoundDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
+  const pal = useDivergingColors();
+  const { width: screenW } = useWindowDimensions();
+  const contentW = Math.min(screenW, 760) - 32;
 
   const [round, setRound] = useState<Round | null>(null);
+  const [handicap, setHandicap] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
+  const [confirm, setConfirm] = useState<"delete" | "reset" | null>(null);
+  const [baseline] = useBaseline(handicap);
 
-  useEffect(() => {
-    const loadRound = async () => {
+  useFocusEffect(
+    useCallback(() => {
       if (!id) return;
+      let alive = true;
       setLoadError(null);
-      try {
-        const data = await getRoundWithPending(id);
-        if (data) {
-          setRound(data);
-        } else {
-          setLoadError("ラウンドデータが見つかりません");
-        }
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        console.error("[round-detail] loadRound error:", err);
-        setLoadError(`データの読み込みに失敗しました。\n[${errMsg}]`);
-      }
+      Promise.all([getRoundWithPending(id), getUserProfile().catch(() => null)])
+        .then(([r, p]) => {
+          if (!alive) return;
+          if (r) setRound(r);
+          else setLoadError("ラウンドが見つかりません");
+          setHandicap(p?.handicap ?? null);
+        })
+        .catch((e) => alive && setLoadError(`読み込みに失敗しました（${e instanceof Error ? e.message : String(e)}）`));
+      return () => {
+        alive = false;
+      };
+    }, [id]),
+  );
+
+  const view = useMemo(() => {
+    if (!round) return null;
+    const holes = holeObservations([round], baseline);
+    const sgByHole = new Map(holes.map((h) => [h.hole.holeNumber, h.sg]));
+    return {
+      holes,
+      sg: sgSummary(holes),
+      points: greenPoints(holes),
+      sgByHole,
+      played: holes.length,
+      putts: holes.reduce((s, h) => s + h.total, 0),
+      one: holes.filter((h) => h.total === 1).length,
+      three: holes.filter((h) => h.total >= 3).length,
     };
-    loadRound();
-  }, [id, reloadKey]);
+  }, [round, baseline]);
 
-  const handleConfirmDelete = async () => {
-    if (!round) return;
-    await deleteRound(round.id);
-    hapticSuccess();
-    setShowDeleteConfirm(false);
-    router.back();
-  };
-
-  const handleConfirmReset = async () => {
-    if (!round) return;
+  const onConfirm = async () => {
+    if (!round || !confirm) return;
+    if (confirm === "delete") {
+      await deleteRound(round.id);
+      hapticSuccess();
+      router.back();
+      return;
+    }
     await resetRoundHoles(round.id);
-    setShowResetConfirm(false);
-    // Clear state and re-fetch to reflect the reset
-    setRound(null);
-    setReloadKey((k) => k + 1);
+    setConfirm(null);
+    const r = await getRoundWithPending(round.id);
+    setRound(r);
   };
 
-  if (!round) {
+  if (loadError) {
+    return (
+      <ScreenContainer className="p-4">
+        <Header onBack={() => router.back()} title="ラウンド" />
+        <ErrorBanner message={loadError} />
+      </ScreenContainer>
+    );
+  }
+  if (!round || !view) {
     return (
       <ScreenContainer className="items-center justify-center">
-        {loadError ? (
-          <View className="items-center gap-4 px-8">
-            <Text style={{ color: colors.error, textAlign: "center", fontSize: 14 }}>{loadError}</Text>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={{ paddingHorizontal: 24, paddingVertical: 10, backgroundColor: colors.primary, borderRadius: 8 }}
-            >
-              <Text style={{ color: "white", fontWeight: "600" }}>戻る</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <Text className="text-muted">読み込み中...</Text>
-        )}
+        <ActivityIndicator size="large" color={colors.primary} />
       </ScreenContainer>
     );
   }
 
-  const playedHoles = getPlayedHoles(round);
-  const playedTotalPutts = playedHoles.reduce((sum, hole) => sum + hole.totalPutts, 0);
-  const avgPutts = playedHoles.length > 0 ? playedTotalPutts / playedHoles.length : 0;
-  const onePuttCount = playedHoles.filter((h) => h.totalPutts === 1).length;
-  const threePuttCount = playedHoles.filter((h) => h.totalPutts >= 3).length;
+  const d = new Date(`${round.date}T00:00:00`);
+  const chips = [
+    round.stimpmeter ? `${round.stimpmeter}ft` : null,
+    round.grassType ? LABELS.grassType[round.grassType] : null,
+    round.putterName || null,
+    round.weather ? LABELS.weather[round.weather] : null,
+  ].filter(Boolean) as string[];
+  const empty = view.played === 0;
 
   return (
-    <ScreenContainer edges={["top", "left", "right", "bottom"]}>
-      {/* ヘッダー */}
-      <View className="flex-row items-center justify-between p-4 border-b border-border">
-        <TouchableOpacity onPress={() => router.back()}>
-          <IconSymbol name="arrow.left" size={24} color={colors.foreground} />
-        </TouchableOpacity>
-        <Text className="text-lg font-semibold text-foreground">
-          ラウンド詳細
-        </Text>
-        <TouchableOpacity onPress={() => setShowDeleteConfirm(true)}>
-          <IconSymbol name="trash.fill" size={24} color={colors.error} />
-        </TouchableOpacity>
-      </View>
-
-      {/* 削除確認 */}
-      {showDeleteConfirm && (
-        <ConfirmBox
-          message="このラウンドデータを削除しますか？"
-          confirmLabel="削除"
-          onCancel={() => setShowDeleteConfirm(false)}
-          onConfirm={handleConfirmDelete}
-          style={{ margin: 16 }}
-        />
-      )}
-
-      {/* リセット確認 */}
-      {showResetConfirm && (
-        <ConfirmBox
-          variant="warning"
-          message="ホールデータをリセットしますか？"
-          detail="パット記録が全て消えます。ラウンド情報（コース・日付等）は残ります。"
-          confirmLabel="リセット"
-          onCancel={() => setShowResetConfirm(false)}
-          onConfirm={handleConfirmReset}
-          style={{ margin: 16, marginTop: 0 }}
-        />
-      )}
-
-      <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
-        {/* 基本情報 */}
-        <View className="bg-surface rounded-2xl p-4 border border-border mb-4" style={cardShadow}>
-          <Text className="text-xl font-bold text-foreground mb-1">
-            {round.courseName}
-          </Text>
-          <Text className="text-muted">{formatDate(round.date)}</Text>
-
-          <View className="flex-row flex-wrap gap-2 mt-3">
-            <Badge label={LABELS.weather[round.weather]} />
-            <Badge label={LABELS.windSpeed[round.windSpeed]} />
-            <Badge label={LABELS.grassType[round.grassType]} />
-            <Badge label={`${round.stimpmeter}ft`} />
-            <Badge label={LABELS.greenCondition[round.greenCondition]} />
-          </View>
-
-          <View className="mt-4 pt-4 border-t border-border">
-            <Text className="text-muted text-sm">使用パター</Text>
-            <Text className="text-foreground font-medium mt-1">
-              {round.putterName}
+    <ScreenContainer>
+      <ScrollView contentContainerStyle={{ alignItems: "center", paddingBottom: 40 }}>
+        <View style={{ width: contentW, gap: 16 }}>
+          <Header onBack={() => router.back()} title={`${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`} />
+          <View>
+            <Text accessibilityRole="header" style={{ color: colors.foreground, fontSize: 26, fontWeight: "900", letterSpacing: -0.4 }}>
+              {round.courseName}
             </Text>
-          </View>
-        </View>
-
-        {/* サマリー */}
-        <View className="bg-surface rounded-2xl p-4 border border-border mb-4" style={cardShadow}>
-          <Text className="text-lg font-semibold text-foreground mb-4">
-            パフォーマンス
-          </Text>
-          <View className="flex-row justify-between">
-            <SummaryItem label="総パット" value={playedTotalPutts.toString()} />
-            <SummaryItem label="平均" value={avgPutts.toFixed(2)} unit="/H" />
-            <SummaryItem
-              label="1パット"
-              value={onePuttCount.toString()}
-              highlight
-            />
-            <SummaryItem
-              label="3パット"
-              value={threePuttCount.toString()}
-              warning={threePuttCount > 0}
-            />
-          </View>
-        </View>
-
-        {/* ホール別データ */}
-        <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-lg font-semibold text-foreground">
-              ホール別データ
-            </Text>
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              <TouchableOpacity onPress={() => setShowResetConfirm(true)}>
-                <Text style={{ color: colors.warning }}>リセット</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => router.push(`/hole-input/${round.id}` as any)}
-              >
-                <Text className="text-primary">編集</Text>
-              </TouchableOpacity>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+              {chips.map((c) => (
+                <View key={c} style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: `${colors.primary}14` }}>
+                  <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "700" }}>{c}</Text>
+                </View>
+              ))}
             </View>
           </View>
 
-          {/* OUT (1-9) */}
-          <Text className="text-muted text-sm mb-2">OUT</Text>
-          <View className="flex-row mb-4">
-            {round.holes.slice(0, 9).map((hole) => (
-              <View key={hole.holeNumber} className="flex-1 items-center">
-                <Text className="text-muted text-xs">{hole.holeNumber}</Text>
-                <View
-                  className={`w-8 h-8 rounded-full items-center justify-center mt-1 ${
-                    hole.totalPutts === 1
-                      ? "bg-success"
-                      : hole.totalPutts >= 3
-                      ? "bg-error"
-                      : "bg-primary"
-                  }`}
-                >
-                  <Text className="text-white font-bold">{hole.totalPutts}</Text>
+          {empty ? (
+            <View style={[{ backgroundColor: colors.surface, borderRadius: 22, padding: 20, borderWidth: 1, borderColor: colors.border, gap: 12 }, shadowSm]}>
+              <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "900" }}>ホールの記録を入れましょう</Text>
+              <Text style={{ color: colors.muted, fontSize: 15, lineHeight: 22 }}>
+                パッティングカードの表（OUT）と裏（IN）を撮影すると、18ホールをまとめて読み取ります。
+              </Text>
+              <BigButton icon="camera.fill" label="カードを撮影して読み取る" primary onPress={() => router.push(`/scan-card?roundId=${round.id}` as never)} />
+              <BigButton icon="pencil" label="手で入力する" onPress={() => router.push(`/hole-input/${round.id}` as never)} />
+            </View>
+          ) : (
+            <>
+              <View style={{ backgroundColor: "#10271A", borderRadius: 24, padding: 20 }}>
+                <Text style={{ color: "#B9C7BC", fontSize: 14, fontWeight: "700" }}>{`${BASELINES[baseline].label}と比べて（${view.played}H）`}</Text>
+                <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 4 }}>
+                  <Text style={{ color: "#F3EFE4", fontSize: 44, fontWeight: "900", fontVariant: ["tabular-nums"] }}>{formatStrokes(view.sg.sgPer18)}</Text>
+                  <Text style={{ color: "#F3EFE4", fontSize: 16, fontWeight: "700" }}>打 / 18H換算</Text>
                 </View>
-                <Text className="text-muted text-xs mt-1">
-                  {LABELS.scoreResult[hole.scoreResult].charAt(0)}
+                <View style={{ flexDirection: "row", marginTop: 14, gap: 8 }}>
+                  <Mini label="パット" value={`${view.putts}`} />
+                  <Mini label="期待値" value={((view.sg.expectedPer18 * view.played) / 18).toFixed(1)} />
+                  <Mini label="1パット" value={`${view.one}`} />
+                  <Mini label="3パット" value={`${view.three}`} color={view.three > 0 ? pal.loss : undefined} />
+                </View>
+                <Text style={{ color: "#B9C7BC", fontSize: 13, marginTop: 10, lineHeight: 19 }}>
+                  期待値＝同じ1st パットの距離から{BASELINES[baseline].short}が打った場合のパット数
                 </Text>
               </View>
-            ))}
-          </View>
 
-          {/* IN (10-18) */}
-          <Text className="text-muted text-sm mb-2">IN</Text>
-          <View className="flex-row">
-            {round.holes.slice(9, 18).map((hole) => (
-              <View key={hole.holeNumber} className="flex-1 items-center">
-                <Text className="text-muted text-xs">{hole.holeNumber}</Text>
-                <View
-                  className={`w-8 h-8 rounded-full items-center justify-center mt-1 ${
-                    hole.totalPutts === 1
-                      ? "bg-success"
-                      : hole.totalPutts >= 3
-                      ? "bg-error"
-                      : "bg-primary"
-                  }`}
-                >
-                  <Text className="text-white font-bold">{hole.totalPutts}</Text>
-                </View>
-                <Text className="text-muted text-xs mt-1">
-                  {LABELS.scoreResult[hole.scoreResult].charAt(0)}
-                </Text>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <SmallButton icon="camera.fill" label="カードを読み取る" onPress={() => router.push(`/scan-card?roundId=${round.id}` as never)} />
+                <SmallButton icon="pencil" label="手入力で編集" onPress={() => router.push(`/hole-input/${round.id}` as never)} />
               </View>
-            ))}
-          </View>
 
-          {/* 合計 */}
-          <View className="flex-row justify-between mt-4 pt-4 border-t border-border">
-            <View>
-              <Text className="text-muted text-sm">OUT</Text>
-              <Text className="text-foreground font-bold text-lg">
-                {round.holes.slice(0, 9).reduce((sum, h) => sum + h.totalPutts, 0)}
-              </Text>
+              {view.points.length > 0 && <GreenMapCard points={view.points} title="このラウンドのグリーンマップ" height={Math.min(360, contentW * 0.9)} />}
+
+              {[
+                { title: "OUT（1〜9）", holes: round.holes.filter((h) => h.holeNumber <= 9) },
+                { title: "IN（10〜18）", holes: round.holes.filter((h) => h.holeNumber >= 10) },
+              ].map((g) => (
+                <HoleTable
+                  key={g.title}
+                  title={g.title}
+                  holes={g.holes}
+                  sgByHole={view.sgByHole}
+                  onPressHole={(n) => router.push(`/hole-input/${round.id}?hole=${n}` as never)}
+                />
+              ))}
+            </>
+          )}
+
+          {confirm ? (
+            <ConfirmBox
+              message={confirm === "delete" ? "このラウンドを削除しますか？" : "ホールの記録をすべて消しますか？"}
+              detail="この操作は取り消せません"
+              confirmLabel={confirm === "delete" ? "削除する" : "消去する"}
+              onConfirm={() => void onConfirm()}
+              onCancel={() => setConfirm(null)}
+            />
+          ) : (
+            <View style={{ flexDirection: "row", gap: 16, justifyContent: "center", marginTop: 8 }}>
+              {!empty && (
+                <Pressable onPress={() => setConfirm("reset")} style={{ minHeight: 44, justifyContent: "center" }}>
+                  <Text style={{ color: colors.muted, fontSize: 15, fontWeight: "700" }}>記録をリセット</Text>
+                </Pressable>
+              )}
+              <Pressable onPress={() => setConfirm("delete")} style={{ minHeight: 44, justifyContent: "center" }}>
+                <Text style={{ color: colors.error, fontSize: 15, fontWeight: "700" }}>ラウンドを削除</Text>
+              </Pressable>
             </View>
-            <View>
-              <Text className="text-muted text-sm">IN</Text>
-              <Text className="text-foreground font-bold text-lg">
-                {round.holes.slice(9, 18).reduce((sum, h) => sum + h.totalPutts, 0)}
-              </Text>
-            </View>
-            <View>
-              <Text className="text-muted text-sm">TOTAL</Text>
-              <Text className="text-primary font-bold text-lg">
-                {round.totalPutts}
-              </Text>
-            </View>
-          </View>
+          )}
         </View>
       </ScrollView>
     </ScreenContainer>
   );
 }
 
-function Badge({ label }: { label: string }) {
+function Header({ onBack, title }: { onBack: () => void; title: string }) {
+  const colors = useColors();
   return (
-    <View className="px-2 py-1 rounded-full bg-border">
-      <Text className="text-xs text-muted">{label}</Text>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingTop: 8 }}>
+      <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="戻る" style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center", marginLeft: -10 }}>
+        <IconSymbol name="arrow.left" size={24} color={colors.foreground} />
+      </Pressable>
+      <Text style={{ color: colors.muted, fontSize: 15, fontWeight: "700" }}>{title}</Text>
     </View>
   );
 }
 
-function SummaryItem({
-  label,
-  value,
-  unit,
-  highlight,
-  warning,
-}: {
-  label: string;
-  value: string;
-  unit?: string;
-  highlight?: boolean;
-  warning?: boolean;
-}) {
+function Mini({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <View className="items-center flex-1">
-      <Text
-        className={`text-2xl font-bold ${
-          highlight ? "text-success" : warning ? "text-error" : "text-foreground"
-        }`}
-      >
-        {value}
-        {unit && <Text className="text-sm">{unit}</Text>}
-      </Text>
-      <Text className="text-xs text-muted mt-1">{label}</Text>
+    <View style={{ flex: 1, backgroundColor: "#FFFFFF10", borderRadius: 12, paddingVertical: 8, alignItems: "center" }}>
+      <Text style={{ color: color ?? "#F3EFE4", fontSize: 20, fontWeight: "900", fontVariant: ["tabular-nums"] }}>{value}</Text>
+      <Text style={{ color: "#B9C7BC", fontSize: 12, fontWeight: "700" }}>{label}</Text>
     </View>
+  );
+}
+
+function BigButton({ icon, label, onPress, primary }: { icon: "camera.fill" | "pencil"; label: string; onPress: () => void; primary?: boolean }) {
+  const colors = useColors();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+        minHeight: 54,
+        paddingHorizontal: 16,
+        borderRadius: 16,
+        backgroundColor: primary ? colors.primary : colors.background,
+        borderWidth: primary ? 0 : 1,
+        borderColor: colors.border,
+        opacity: pressed ? 0.85 : 1,
+      })}
+    >
+      <IconSymbol name={icon} size={22} color={primary ? colors.onPrimary : colors.primary} />
+      <Text style={{ color: primary ? colors.onPrimary : colors.foreground, fontSize: 17, fontWeight: "800" }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function SmallButton({ icon, label, onPress }: { icon: "camera.fill" | "pencil"; label: string; onPress: () => void }) {
+  const colors = useColors();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={({ pressed }) => [
+        { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 48, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
+        shadowSm,
+      ]}
+    >
+      <IconSymbol name={icon} size={20} color={colors.primary} />
+      <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: "800" }}>{label}</Text>
+    </Pressable>
   );
 }

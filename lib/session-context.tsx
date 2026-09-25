@@ -8,42 +8,64 @@ import {
 import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabase";
+import { loadDemoFlag, onDemoModeChange } from "@/lib/demo-mode";
 
 /**
  * セッション状態の単一ソース。
- *   undefined = 読み込み中 / null = 未ログイン / Session = ログイン済み
+ *   undefined = 読み込み中 / null = 未ログイン / Session = ログイン済み（またはデモモード）
  *
  * これを各レイアウト・画面が参照することで、認証が解決する前に
  * 保護されたデータ取得（401 になる）を実行してしまうのを防ぐ。
  */
-const SessionContext = createContext<Session | null | undefined>(undefined);
+type SessionState = { session: Session | null | undefined; demo: boolean };
+
+const SessionContext = createContext<SessionState>({ session: undefined, demo: false });
+
+/** デモモード中に「ログイン済み」として扱うための印（中身は使わない） */
+const DEMO_SESSION = { demo: true } as unknown as Session;
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  // undefined = loading, null = logged out, Session = logged in
   const [session, setSession] = useState<Session | null | undefined>(undefined);
+  const [demo, setDemo] = useState<boolean | undefined>(undefined);
 
   useEffect(() => {
-    // 初期セッション取得
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
+    loadDemoFlag().then(setDemo);
+    const off = onDemoModeChange(setDemo);
 
-    // 認証状態の変化を購読
+    // 初期セッション取得（Supabase が止まっていても読み込み中のままにしない）
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => setSession(session))
+      .catch(() => setSession(null));
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      off();
+      subscription.unsubscribe();
+    };
   }, []);
 
-  return (
-    <SessionContext.Provider value={session}>{children}</SessionContext.Provider>
-  );
+  const value: SessionState =
+    demo === undefined
+      ? { session: undefined, demo: false }
+      : demo
+        ? { session: DEMO_SESSION, demo: true }
+        : { session, demo: false };
+
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
-/** undefined = 読み込み中 / null = 未ログイン / Session = ログイン済み */
+/** undefined = 読み込み中 / null = 未ログイン / Session = ログイン済み（デモ含む） */
 export function useSession() {
-  return useContext(SessionContext);
+  return useContext(SessionContext).session;
+}
+
+/** デモモード中か */
+export function useIsDemo() {
+  return useContext(SessionContext).demo;
 }

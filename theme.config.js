@@ -10,6 +10,8 @@ const themeColors = {
   warning: { light: '#E68A00', dark: '#FFB74D' },
   error: { light: '#B71C1C', dark: '#EF5350' },
   accent: { light: '#B8860B', dark: '#DAA520' },
+  // primary で塗った面の上の文字（ダークの primary は明るい緑なので暗い文字にしてコントラストを確保）
+  onPrimary: { light: '#FFFFFF', dark: '#0D1B0F' },
 };
 
 module.exports = { themeColors };

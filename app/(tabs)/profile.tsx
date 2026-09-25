@@ -30,6 +30,12 @@ import { UserProfile, Putter, GolfCourse, LABELS } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { getRoundsWithHoles } from "@/lib/storage";
 import { buildRoundsCsv, deliverCsv } from "@/lib/export-csv";
+import { Chip } from "@/components/analysis/ui";
+import { useBaseline } from "@/hooks/use-baseline";
+import { setDemoMode } from "@/lib/demo-mode";
+import { openPrintCard } from "@/lib/print-card";
+import { BASELINES, type BaselineId } from "@/lib/putting-stats";
+import { useIsDemo } from "@/lib/session-context";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -47,6 +53,8 @@ export default function ProfileScreen() {
   const [showDeleteAllRoundsConfirm, setShowDeleteAllRoundsConfirm] = useState(false);
   const [isDeletingAllRounds, setIsDeletingAllRounds] = useState(false);
   const [exportState, setExportState] = useState<"idle" | "busy" | "done" | "empty" | "error">("idle");
+  const isDemo = useIsDemo();
+  const [baseline, setBaseline] = useBaseline(profile?.handicap);
 
   const loadData = useCallback(async () => {
     const [profileData, puttersData, coursesData] = await Promise.all([
@@ -89,8 +97,12 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
     setShowLogoutConfirm(false);
+    if (isDemo) {
+      await setDemoMode(false);
+      return;
+    }
+    await supabase.auth.signOut();
   };
 
   const handleConfirmDeleteCourse = async (courseId: string) => {
@@ -226,8 +238,8 @@ export default function ProfileScreen() {
                   className="bg-primary rounded-full px-3 py-1.5 flex-row items-center gap-1"
                   activeOpacity={0.7}
                 >
-                  <IconSymbol name="plus" size={16} color="#FFFFFF" />
-                  <Text className="text-white text-sm font-medium">追加</Text>
+                  <IconSymbol name="plus" size={16} color={colors.onPrimary} />
+                  <Text className="text-onPrimary text-sm font-medium">追加</Text>
                 </TouchableOpacity>
               </View>
 
@@ -372,6 +384,39 @@ export default function ProfileScreen() {
               )}
             </View>
 
+            {/* パッティングカード */}
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground mb-1">パッティングカード</Text>
+              <Text style={{ color: colors.muted, fontSize: 14, lineHeight: 20, marginBottom: 12 }}>
+                A4に印刷して二つ折り（175×105mm・ポケットサイズ）。表がOUT、裏がIN。1枚で18ホール記録できます。
+              </Text>
+              <TouchableOpacity
+                onPress={() => void openPrintCard()}
+                className="bg-primary rounded-xl px-4 flex-row items-center justify-center gap-2"
+                style={{ minHeight: 48 }}
+                activeOpacity={0.8}
+              >
+                <IconSymbol name="printer.fill" size={18} color={colors.onPrimary} />
+                <Text style={{ color: colors.onPrimary, fontSize: 16, fontWeight: "800" }}>カードを印刷する</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* 分析の比較基準 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground mb-1">分析で比べる相手</Text>
+              <Text style={{ color: colors.muted, fontSize: 14, lineHeight: 20, marginBottom: 12 }}>
+                ストロークス・ゲインド（損得）の基準です。分析タブでも切り替えられます。
+              </Text>
+              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                {(Object.keys(BASELINES) as BaselineId[]).map((b) => (
+                  <Chip key={b} label={BASELINES[b].label} selected={baseline === b} onPress={() => setBaseline(b)} />
+                ))}
+              </View>
+              <TouchableOpacity onPress={() => router.push("/guide" as any)} style={{ minHeight: 44, justifyContent: "center", marginTop: 6 }}>
+                <Text style={{ color: colors.primary, fontSize: 15, fontWeight: "700" }}>分析の見方を読む →</Text>
+              </TouchableOpacity>
+            </View>
+
             {/* データのエクスポート */}
             <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
               <Text className="text-lg font-semibold text-foreground mb-1">データ</Text>
@@ -453,7 +498,7 @@ export default function ProfileScreen() {
             {/* ログアウト */}
             {showLogoutConfirm ? (
               <View className="bg-surface rounded-2xl p-4 border border-border gap-3" style={cardShadow}>
-                <Text className="text-foreground font-semibold text-center">ログアウトしますか？</Text>
+                <Text className="text-foreground font-semibold text-center">{isDemo ? "デモを終了しますか？" : "ログアウトしますか？"}</Text>
                 <View className="flex-row gap-3">
                   <TouchableOpacity
                     onPress={() => setShowLogoutConfirm(false)}
@@ -468,7 +513,7 @@ export default function ProfileScreen() {
                     style={{ backgroundColor: colors.error }}
                     activeOpacity={0.7}
                   >
-                    <Text className="text-white font-medium">ログアウト</Text>
+                    <Text className="text-white font-medium">{isDemo ? "デモを終了" : "ログアウト"}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -481,7 +526,7 @@ export default function ProfileScreen() {
               >
                 <IconSymbol name="rectangle.portrait.and.arrow.right" size={20} color={colors.error} />
                 <Text style={{ color: colors.error }} className="font-semibold text-base">
-                  ログアウト
+                  {isDemo ? "デモを終了してログイン画面へ" : "ログアウト"}
                 </Text>
               </TouchableOpacity>
             )}

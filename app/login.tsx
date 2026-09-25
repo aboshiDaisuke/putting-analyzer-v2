@@ -10,13 +10,14 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Circle } from "react-native-svg";
 import * as Linking from "expo-linking";
 import { supabase } from "@/lib/supabase";
+import { setDemoMode } from "@/lib/demo-mode";
 import { useColors } from "@/hooks/use-colors";
 import { ErrorBanner } from "@/components/ui/error-banner";
-import { IconSymbol } from "@/components/ui/icon-symbol";
 import { shadowLg, shadowPrimary } from "@/lib/card-shadow";
+import { GreenScene } from "@/components/green/green-scene";
+import { STAGE } from "@/components/green/green-types";
 
 type Mode = "signin" | "signup";
 
@@ -97,39 +98,15 @@ export default function LoginScreen() {
           contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Logo / Title */}
-          <View style={{ alignItems: "center", marginBottom: 36 }}>
-            <View
-              style={[
-                {
-                  width: 84,
-                  height: 84,
-                  borderRadius: 26,
-                  backgroundColor: colors.primary,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginBottom: 18,
-                  overflow: "hidden",
-                },
-                shadowPrimary,
-              ]}
-            >
-              {/* グリーンの等高線モチーフ */}
-              <View style={{ position: "absolute", opacity: 0.6 }}>
-                <Svg width={84} height={84}>
-                  <Circle cx={62} cy={24} r={30} stroke="rgba(255,255,255,0.12)" strokeWidth={1.5} fill="none" />
-                  <Circle cx={62} cy={24} r={18} stroke="rgba(255,255,255,0.1)" strokeWidth={1.5} fill="none" />
-                </Svg>
-              </View>
-              <IconSymbol name="flag.fill" size={38} color="#FFFFFF" />
-              <View style={{ position: "absolute", bottom: 16, width: 30, height: 3, borderRadius: 2, backgroundColor: colors.accent }} />
+          {/* ヒーロー: 3D グリーン */}
+          <View style={{ borderRadius: 26, overflow: "hidden", marginBottom: 20, maxWidth: 480, width: "100%", alignSelf: "center" }}>
+            <GreenScene mode="hero" height={230} radius={0} accessibilityLabel="グリーン上でボールがカップに入るアニメーション" />
+            <View pointerEvents="none" style={{ position: "absolute", left: 20, top: 18, right: 20 }}>
+              <Text style={{ fontSize: 28, fontWeight: "900", color: STAGE.text, letterSpacing: -0.4 }}>パッティング分析</Text>
+              <Text style={{ fontSize: 15, color: STAGE.textMuted, marginTop: 4, lineHeight: 21 }}>
+                カードに書いて撮るだけ。{"\n"}どこで何打失っているかが分かる
+              </Text>
             </View>
-            <Text style={{ fontSize: 27, fontWeight: "800", color: colors.tint, letterSpacing: -0.3 }}>
-              パッティング分析
-            </Text>
-            <Text style={{ fontSize: 14, color: colors.muted, marginTop: 4 }}>
-              あなたのパッティングを記録・分析
-            </Text>
           </View>
 
           {/* Card */}
@@ -139,6 +116,9 @@ export default function LoginScreen() {
                 backgroundColor: colors.surface,
                 borderRadius: 24,
                 padding: 24,
+                maxWidth: 480,
+                width: "100%",
+                alignSelf: "center",
                 borderWidth: 1,
                 borderColor: colors.border,
               },
@@ -170,7 +150,7 @@ export default function LoginScreen() {
                   <Text
                     style={{
                       fontWeight: "600",
-                      color: mode === m ? "#fff" : colors.muted,
+                      color: mode === m ? colors.onPrimary : colors.muted,
                     }}
                   >
                     {m === "signin" ? "ログイン" : "新規登録"}
@@ -262,9 +242,9 @@ export default function LoginScreen() {
               ]}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.onPrimary} />
               ) : (
-                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}>
+                <Text style={{ color: colors.onPrimary, fontWeight: "bold", fontSize: 16 }}>
                   {mode === "signin" ? "ログイン" : "アカウント作成"}
                 </Text>
               )}
@@ -312,6 +292,21 @@ export default function LoginScreen() {
               </View>
               <Text style={{ color: colors.text, fontWeight: "600", fontSize: 15 }}>
                 Googleでログイン
+              </Text>
+            </TouchableOpacity>
+
+            {/* デモ */}
+            <TouchableOpacity
+              onPress={() => void setDemoMode(true)}
+              disabled={loading}
+              accessibilityRole="button"
+              style={{ paddingVertical: 14, alignItems: "center", marginTop: 8 }}
+            >
+              <Text style={{ color: colors.tint, fontWeight: "700", fontSize: 15 }}>
+                ログインせずにデモを見る
+              </Text>
+              <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>
+                サンプルの22ラウンドで分析を体験できます
               </Text>
             </TouchableOpacity>
           </View>

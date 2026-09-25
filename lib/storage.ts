@@ -20,7 +20,8 @@ import {
   DEFAULT_USER_PROFILE,
 } from "./types";
 
-import * as ApiGolf from "./api-golf";
+import * as RemoteApi from "./api-golf";
+import { DemoStore, isDemoMode, loadDemoFlag } from "./demo-mode";
 import {
   enqueueHoleSave,
   flushPendingHoleSaves,
@@ -28,6 +29,16 @@ import {
   getPendingHolesForRound,
   isNetworkError,
 } from "./offline-queue";
+
+/**
+ * デモモード中はメモリ上のサンプルデータ、それ以外はサーバー（tRPC）を使う。
+ * 画面側は storage.ts の関数だけを呼ぶので、切り替えはここで完結する。
+ */
+async function api(): Promise<Pick<typeof RemoteApi, keyof typeof DemoStore>> {
+  // 起動直後はフラグの読み込みを待つ（デモ中に本番 API を呼ばないため）
+  await loadDemoFlag();
+  return isDemoMode() ? DemoStore : RemoteApi;
+}
 
 // ─── ID generator (kept for backward compat; not used for server data) ────────
 
@@ -39,8 +50,9 @@ export function generateId(): string {
 // Falls back to AsyncStorage so an unauthenticated user can still store a name.
 
 export async function getUserProfile(): Promise<UserProfile | null> {
+  if (await loadDemoFlag()) return DemoStore.getUserProfile();
   try {
-    const profile = await ApiGolf.getUserProfile();
+    const profile = await (await api()).getUserProfile();
     if (profile) {
       // 名前はサーバー(users.name)が正。未設定なら旧バージョンで端末に保存した名前を補う。
       if (!profile.name) {
@@ -73,6 +85,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
 export async function saveUserProfile(
   profile: Partial<UserProfile>,
 ): Promise<UserProfile> {
+  if (await loadDemoFlag()) return DemoStore.saveUserProfile(profile);
   // Always persist to AsyncStorage (covers offline / unauthenticated case)
   let localProfile: UserProfile;
   try {
@@ -103,7 +116,7 @@ export async function saveUserProfile(
 
   // Best-effort server sync (non-fatal on failure)
   try {
-    const serverProfile = await ApiGolf.saveUserProfile(profile);
+    const serverProfile = await (await api()).saveUserProfile(profile);
     return { ...serverProfile, name: serverProfile.name || localProfile.name };
   } catch {
     // Server unavailable — return local data
@@ -114,83 +127,83 @@ export async function saveUserProfile(
 // ─── Putters ──────────────────────────────────────────────────────────────────
 
 export async function getPutters(): Promise<Putter[]> {
-  return ApiGolf.getPutters();
+  return (await api()).getPutters();
 }
 
 export async function getPutter(id: string): Promise<Putter | null> {
-  return ApiGolf.getPutter(id);
+  return (await api()).getPutter(id);
 }
 
 export async function savePutter(
   putter: Omit<Putter, "id" | "createdAt" | "updatedAt">,
 ): Promise<Putter> {
-  return ApiGolf.savePutter(putter);
+  return (await api()).savePutter(putter);
 }
 
 export async function updatePutter(
   id: string,
   updates: Partial<Putter>,
 ): Promise<Putter | null> {
-  return ApiGolf.updatePutter(id, updates);
+  return (await api()).updatePutter(id, updates);
 }
 
 export async function deletePutter(id: string): Promise<boolean> {
-  return ApiGolf.deletePutter(id);
+  return (await api()).deletePutter(id);
 }
 
 // ─── Courses ──────────────────────────────────────────────────────────────────
 
 export async function getCourses(): Promise<GolfCourse[]> {
-  return ApiGolf.getCourses();
+  return (await api()).getCourses();
 }
 
 export async function saveCourse(
   course: Omit<GolfCourse, "id" | "createdAt">,
 ): Promise<GolfCourse> {
-  return ApiGolf.saveCourse(course);
+  return (await api()).saveCourse(course);
 }
 
 export async function deleteCourse(id: string): Promise<boolean> {
-  return ApiGolf.deleteCourse(id);
+  return (await api()).deleteCourse(id);
 }
 
 // ─── Rounds ───────────────────────────────────────────────────────────────────
 
 export async function getRounds(): Promise<Round[]> {
-  return ApiGolf.getRounds();
+  return (await api()).getRounds();
 }
 
 export async function getRoundsWithHoles(fromDate?: string): Promise<Round[]> {
-  return ApiGolf.getRoundsWithHoles(fromDate);
+  return (await api()).getRoundsWithHoles(fromDate);
 }
 
 export async function getRound(id: string): Promise<Round | null> {
-  return ApiGolf.getRound(id);
+  return (await api()).getRound(id);
 }
 
 export async function saveRound(
   round: Omit<Round, "id" | "createdAt" | "updatedAt">,
 ): Promise<Round> {
-  return ApiGolf.saveRound(round);
+  return (await api()).saveRound(round);
 }
 
 export async function updateRound(
   id: string,
   updates: Partial<Round>,
 ): Promise<Round | null> {
-  return ApiGolf.updateRound(id, updates);
+  return (await api()).updateRound(id, updates);
 }
 
 export async function deleteRound(id: string): Promise<boolean> {
-  return ApiGolf.deleteRound(id);
+  return (await api()).deleteRound(id);
 }
 
 export async function resetRoundHoles(id: string): Promise<boolean> {
-  return ApiGolf.resetRoundHoles(id);
+  return (await api()).resetRoundHoles(id);
 }
 
 export async function deleteAllRounds(): Promise<boolean> {
-  return ApiGolf.deleteAllRounds();
+  return (await api()).deleteAllRounds();
 }
 
 // ─── Holes ────────────────────────────────────────────────────────────────────
@@ -211,10 +224,11 @@ export async function saveHolesForRound(
   roundId: string,
   holes: HoleData[],
 ): Promise<SaveHolesOutcome> {
+  if (await loadDemoFlag()) return DemoStore.saveHolesForRound(roundId, holes);
   // 先に溜まっている保存があれば流す（順序を保つため）
-  await flushPendingHoleSaves(ApiGolf.saveHolesForRound).catch(() => undefined);
+  await flushPendingHoleSaves(RemoteApi.saveHolesForRound).catch(() => undefined);
   try {
-    return await ApiGolf.saveHolesForRound(roundId, holes);
+    return await (await api()).saveHolesForRound(roundId, holes);
   } catch (error) {
     if (!isNetworkError(error)) throw error;
     await enqueueHoleSave(roundId, holes);
@@ -240,17 +254,19 @@ export async function saveHolesForRound(
 
 /** 保留中の保存を再送する（画面のフォーカス時などに呼ぶ） */
 export async function syncPendingHoleSaves(): Promise<{ sent: number; remaining: number }> {
-  return flushPendingHoleSaves(ApiGolf.saveHolesForRound);
+  if (await loadDemoFlag()) return { sent: 0, remaining: 0 };
+  return flushPendingHoleSaves(RemoteApi.saveHolesForRound);
 }
 
 export async function pendingHoleSaveCount(): Promise<number> {
+  if (await loadDemoFlag()) return 0;
   return getPendingHoleSaveCount();
 }
 
 /** 保留中のホールがあれば、サーバーから取得したラウンドに重ねて返す（表示用） */
 export async function getRoundWithPending(id: string): Promise<Round | null> {
-  const round = await ApiGolf.getRound(id);
-  if (!round) return null;
+  const round = await (await api()).getRound(id);
+  if (!round || isDemoMode()) return round;
   const pending = await getPendingHolesForRound(id);
   if (!pending) return round;
   const holes = round.holes.map((h) => pending.find((p) => p.holeNumber === h.holeNumber) ?? h);

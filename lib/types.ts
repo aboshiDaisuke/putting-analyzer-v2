@@ -93,22 +93,32 @@ export type SlopeUpDown = 'flat' | 'uphill' | 'downhill' | 'up_down' | 'down_up'
 // ライン（左右）- カードの Line(L/R): St, L, R, LR, RL に対応
 export type SlopeLeftRight = 'straight' | 'left' | 'right' | 'left_right' | 'right_left';
 
+// 外れたパットの縦方向（カード v3 の「短 / 長」）
+export type MissLength = 'short' | 'long';
+
 // パットデータ - カードの各パットセクションに完全対応
 export interface PuttData {
   strokeNumber: 1 | 2 | 3; // 1st/2nd/3rd Putt
   cupIn: boolean; // カードの In チェックボックス
   distPrev: number | null; // カードの Dist(prev) yd - 前回パットからの残り距離
-  result: ScoreResult | null; // カードの Result - 塗りつぶし選択
+  /**
+   * このパットが入れば何のスコアか（"バーディパット" なら birdie）。
+   * カード v3 では1ホールに1回「何のパット？」を記入し、2打目以降は1つずつ悪くなる。
+   */
+  result: ScoreResult | null;
   lengthSteps: number | null; // カードの Length st - 歩数
   lengthMeters: number | null; // カードの Length m - メートル直入力
   distanceMeters: number; // 計算された距離（メートル）= 歩数 × 歩幅
   lineUD: SlopeUpDown | null; // カードの Line(U/D): F, U, D, UD, DU（未記入は null）
   lineLR: SlopeLeftRight | null; // カードの Line(L/R): St, L, R, LR, RL（未記入は null）
+  /** 外れたときショートかオーバーか（未記入・カップインは null） */
+  missLength?: MissLength | null;
 }
 
 // ホールデータ
 export interface HoleData {
   holeNumber: number; // 1-18
+  /** ホールの最終スコア（何のパット＋パット数から決まる） */
   scoreResult: ScoreResult;
   totalPutts: number;
   putts: PuttData[];
@@ -382,6 +392,7 @@ export function createDefaultPutt(strokeNumber: 1 | 2 | 3): PuttData {
     distanceMeters: 0,
     lineUD: null,
     lineLR: null,
+    missLength: null,
   };
 }
 

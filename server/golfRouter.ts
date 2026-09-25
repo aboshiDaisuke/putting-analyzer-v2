@@ -88,6 +88,7 @@ const puttInputSchema = z.object({
   distanceMeters: z.number().nullable().optional(),
   lineUD: slopeUpDownSchema.nullable().optional(),
   lineLR: slopeLeftRightSchema.nullable().optional(),
+  missLength: z.enum(["short", "long"]).nullable().optional(),
 });
 
 // ─── Hole input schema (used in upsertHoles) ─────────────────────────────────

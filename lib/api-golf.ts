@@ -189,6 +189,7 @@ interface DbPutt {
   distanceMeters: number | null;
   lineUD: string | null;
   lineLR: string | null;
+  missLength?: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
@@ -252,6 +253,7 @@ function dbPuttToClient(db: DbPutt): PuttData {
     distanceMeters: db.distanceMeters ?? 0,
     lineUD: (db.lineUD as PuttData["lineUD"]) ?? null,
     lineLR: (db.lineLR as PuttData["lineLR"]) ?? null,
+    missLength: (db.missLength as PuttData["missLength"]) ?? null,
   };
 }
 
@@ -732,6 +734,7 @@ export async function saveHolesForRound(
       distanceMeters: putt.distanceMeters,
       lineUD: putt.lineUD,
       lineLR: putt.lineLR,
+      missLength: putt.missLength ?? null,
     })),
   }));
 
