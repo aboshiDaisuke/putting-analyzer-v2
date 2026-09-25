@@ -45,6 +45,21 @@
 - **デモモード**: ログイン画面「ログインせずにデモを見る」。`lib/demo-mode.ts`（メモリ上のストア）＋ `lib/demo-data.ts`。
   Supabase 停止中の画面確認にも使える（localStorage `putting_analyzer_demo_mode=1`）
 
+## 2026-09-25 夕方の中断時点（最優先で続きをやる）
+
+- **本番は旧版に戻してある**: PR #1 は一度マージ（`e67f518`）したが本番の API が全滅したため revert（GitHub の main = `3c8f4cc`）。
+  旧版でデータ API 200 を確認済み。DB（0003〜0005・RLS）は旧版とも互換。**停止防止 cron は本番で未有効のまま**。
+  GitHub のリモート名は `github`（`origin` は別物）
+- 落ちた原因: `server/_core/context.ts` の `import { decodeJwt } from "jose"`（ESM 専用）→ Vercel で ERR_REQUIRE_ESM。
+  修正 `1496860`（JWT の exp を自前で読む）を作業ブランチにプッシュ済み。プレビューの health / golf.rounds.list は 200
+- **未解決: プレビューで `ocr.analyzeCard` が 61.5 秒で HTTP 504**（`vercel.json` の `maxDuration: 60` 超過）
+- 未コミット: `server/card-ocr.ts` に `OCR_THINKING`（既定 low）。low でもきれいな3枚は 275/275 だが**所要 39〜156 秒で速くならない**。
+  悪条件セット（`FIXTURE_DIR=tests/fixtures/stress`）は未測定。
+  次の案: `vercel.json` の api の `maxDuration` を 300 に上げる＋所要時間の内訳（Gemini 待ち）を計測。
+  直ったら作業ブランチから main へ再度マージ（revert の revert が必要）
+- プレビューは保護付きなので `vercel curl` で叩く。その際 Vercel に「Protection Bypass for Automation」トークンが自動作成された（不要なら Settings → Deployment Protection で削除）
+- `scripts/_tmp/` は検証用の一時スクリプト（`prod-ocr.ts` で本番/プレビューの OCR 所要時間を測れる。コミットしない・作業後に削除）
+
 ## 次にやること
 
 1. ~~Supabase を Restore / 0003〜0005 を適用 / anon の REST が 401 / ローカルで ログイン→撮影→読み取り→保存→分析 の通し確認~~（2026-09-25 済み）
