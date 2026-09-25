@@ -1,6 +1,5 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { decodeJwt } from "jose";
 import type { User } from "../../drizzle/schema";
 import { getUserByOpenId, upsertUser } from "../db";
 import { ENV } from "./env";
@@ -33,10 +32,16 @@ const USER_SYNC_INTERVAL_MS = 60 * 60 * 1000;
 type CacheEntry = { user: User; expiresAt: number };
 const userCache = new Map<string, CacheEntry>();
 
+/**
+ * JWT の exp（有効期限）を読む（署名は検証しない。検証は Supabase Auth の getUser が行う）。
+ * jose は ESM 専用で、Vercel の Node では CommonJS から require できず関数ごと落ちたため使わない。
+ */
 function jwtExpiryMs(token: string): number | null {
   try {
-    const { exp } = decodeJwt(token);
-    return typeof exp === "number" ? exp * 1000 : null;
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const json = JSON.parse(Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+    return typeof json.exp === "number" ? json.exp * 1000 : null;
   } catch {
     return null;
   }
