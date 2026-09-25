@@ -7,8 +7,10 @@
 - ドラフトPR: https://github.com/aboshiDaisuke/putting-analyzer-v2/pull/1
 - Supabase project ref: `ijrrzinlhqhinlmzunzn` (`putting-analyzer`)
 - 本番: https://putting-analyzer-v2.vercel.app/
-- **2026-09-16 時点で Supabase プロジェクトが自動 pause 中**（free プランの1週間非アクティブ）。
-  本番 `/api/health` は `db: failed`、Auth も応答なし。Dashboard から Restore が必要。
+- **2026-09-25 に Supabase を Restore し、migration 0003・0004・0005 を本番に適用済み**
+  （`scripts/db/apply-migrations.ts --apply`。RLS 有効・anon の REST は 401 を確認。適用前のデータは scratchpad に JSON で退避）。
+  本番 DB は drizzle の適用履歴テーブルが**空**（手動適用の運用）なので `drizzle-kit migrate` は使わないこと
+- 停止の原因: 停止防止の cron が `main`（本番）に入っていなかった。PR #1 をマージすると Vercel の日次 cron が有効になる
 
 ## 2026-09-16 の修正（コミット済み・未プッシュ・本番DB未適用）
 
@@ -45,18 +47,18 @@
 
 ## 次にやること
 
-1. Supabase Dashboard でプロジェクトを Restore する
-2. `drizzle.__drizzle_migrations` の履歴を確認し、0003・0004・0005 を適用する
-   - 履歴があれば `DATABASE_URL=... npx drizzle-kit migrate`
-   - 履歴が無ければ SQL Editor で 0003 → 0004 → 0005 の順に手動実行
-   - 0004 は所有者ロール（postgres）で実行すること。適用後 `SELECT relrowsecurity FROM pg_class` で確認
-3. anon key で `https://<ref>.supabase.co/rest/v1/rounds?select=*` を叩いて 401/空になることを確認
-4. ログイン → ラウンド作成 → ホール入力 → 分析 が本番で動くことを確認
+1. ~~Supabase を Restore / 0003〜0005 を適用 / anon の REST が 401 / ローカルで ログイン→撮影→読み取り→保存→分析 の通し確認~~（2026-09-25 済み）
+2. PR #1 をマージして本番にデプロイ（停止防止の cron が有効になる）。デプロイ後に本番でも通しで確認
+3. 本番の `/api/health` が `{"ok":true,...}`（古い `dbUrlPreview` 付きではない）になっていることを確認
+4. GitHub Actions の keep-alive が成功していることを確認（公開リポジトリは60日コミットが無いと自動停止）
 5. カード v3 を印刷（実寸 175×105mm になっているか定規で確認）し、実際に記入・撮影して OCR を試す
    （■未検出が続く場合は `lib/ocr-image-core.ts` の `findCornerMarkers`、印の判定は `lib/scorecard/process.ts` の MARK_*/INK_* を調整）
 6. 問題がなければプッシュし、ドラフトPRを Ready にする
 
 ## 重要な注意
+
+- ローカルでは別アプリが `[::1]:3000` を使っていることがある。その場合ブラウザの `localhost:3000` は別アプリに届く
+  （CORS エラーになる）。API を `PORT=3001` で起動し、`.env` の `EXPO_PUBLIC_API_BASE_URL` を一時的に `http://127.0.0.1:3001` にして Metro を `--clear` で再起動する
 
 - `.env` やアクセストークン、DBパスワードなどの秘密情報をログやコミットに出さないこと。
 - 本番DBを変更する前に現行スキーマを読み取り確認し、適用後も検証すること。

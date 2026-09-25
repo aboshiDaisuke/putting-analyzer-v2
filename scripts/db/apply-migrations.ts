@@ -30,7 +30,9 @@ async function main() {
   const sql = postgres(url, { connect_timeout: 15, max: 1, prepare: false });
   try {
     const [h] = await sql`SELECT to_regclass('drizzle.__drizzle_migrations') AS t`;
-    if (h.t) {
+    const histCount = h.t ? Number((await sql`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`)[0].n) : 0;
+    // 履歴テーブルがあっても空なら手動適用の運用（drizzle-kit migrate は 0000 から流し直して失敗する）
+    if (histCount > 0) {
       console.log("drizzle の適用履歴があります。履歴に沿って `DATABASE_URL=... npx drizzle-kit migrate` で適用してください。");
       return;
     }
