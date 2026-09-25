@@ -35,13 +35,6 @@ export type Message = {
 
 export type InvokeParams = {
   messages: Message[];
-  /** 使用モデル。省略時は ENV.geminiModel */
-  model?: string;
-  /**
-   * Gemini の構造化出力スキーマ（OpenAPI サブセット）。指定すると responseMimeType=application/json と
-   * 併せて出力の型・列挙値・必須キーをモデル側で強制できる（テキスト指示より確実）。
-   */
-  responseSchema?: Record<string, unknown>;
   responseFormat?: { type: "text" | "json_object" | "json_schema" };
   response_format?: { type: "text" | "json_object" | "json_schema" };
   maxTokens?: number;
@@ -156,12 +149,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
   // thinking: モデルが回答前に内部で推論する設定。OCRのような複雑な視覚タスクで精度が大幅に向上する。
   // Gemini 3 系は thinkingLevel、2.5 系は thinkingBudget と指定方法が異なる（両方送ると400エラー）
-  const modelName = params.model ?? ENV.geminiModel;
-  if (params.responseSchema) {
-    generationConfig.responseMimeType = "application/json";
-    generationConfig.responseSchema = params.responseSchema;
-  }
-  const isGemini3 = modelName.startsWith("gemini-3");
+  const isGemini3 = ENV.geminiModel.startsWith("gemini-3");
   if (isGemini3) {
     const level =
       params.thinkingLevel ??
@@ -175,7 +163,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   const model = genAI.getGenerativeModel({
-    model: modelName,
+    model: ENV.geminiModel,
     ...(systemInstruction ? { systemInstruction } : {}),
     ...(Object.keys(generationConfig).length > 0
       ? { generationConfig: generationConfig as any }
@@ -210,7 +198,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   return {
     id: `gemini-${Date.now()}`,
     created: Math.floor(Date.now() / 1000),
-    model: modelName,
+    model: ENV.geminiModel,
     choices: [
       {
         index: 0,

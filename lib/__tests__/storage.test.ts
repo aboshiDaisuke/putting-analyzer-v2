@@ -15,7 +15,6 @@ const { mockStorage, mockApiGolf } = vi.hoisted(() => {
     saveCourse: vi.fn(),
     deleteCourse: vi.fn(),
     getRounds: vi.fn(),
-    getRoundsWithHoles: vi.fn(),
     getRound: vi.fn(),
     saveRound: vi.fn(),
     updateRound: vi.fn(),
@@ -56,7 +55,6 @@ import {
   savePutter,
   deletePutter,
   getRounds,
-  getRoundsWithHoles,
   saveRound,
   deleteRound,
 } from "../storage";
@@ -238,14 +236,6 @@ describe("Storage Functions", () => {
 
       const rounds = await getRounds();
       expect(rounds).toEqual([]);
-    });
-
-    it("forwards the analytics cutoff date to the API", async () => {
-      mockApiGolf.getRoundsWithHoles.mockResolvedValue([]);
-
-      await getRoundsWithHoles("2026-06-17");
-
-      expect(mockApiGolf.getRoundsWithHoles).toHaveBeenCalledWith("2026-06-17");
     });
 
     it("should save and retrieve rounds", async () => {

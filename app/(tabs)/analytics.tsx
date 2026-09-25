@@ -1,483 +1,534 @@
-/**
- * 分析タブ（v3）。ストロークス・ゲインド（SG）を軸に「どこで何打失っているか」を見せる。
- *
- *   1. 結論: 基準に対して1ラウンド何打の得/損か、パット数を「距離の難しさ」と「腕前」に分解
- *   2. グリーンマップ（3D）: 1st パットの位置と結果
- *   3. 練習の優先順位: 失っている打数が大きい順
- *   4. 距離帯別の SG / 距離別カップイン率 / ロングパットの寄せ / ライン別 / 何のパット別 / 推移 / 条件別
- * 集計ロジックは lib/putting-stats.ts、考え方は docs/ANALYTICS.md。
- */
-import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { useCallback, useState } from "react";
+import {
+  ScrollView,
+  Text,
+  View,
+  TouchableOpacity,
+  Dimensions,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+} from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { GreenMapCard } from "@/components/analysis/green-map-card";
-import { DivergingBars, LineHeatmap, MakeCurveChart, SplitMeter, TrendChart, useDivergingColors } from "@/components/analysis/charts";
-import { Card, Chip, Note, SectionTitle, Segmented, StatTile, formatStrokes } from "@/components/analysis/ui";
 import { useColors } from "@/hooks/use-colors";
-import { useBaseline } from "@/hooks/use-baseline";
-import { getRoundsWithHoles, getUserProfile } from "@/lib/storage";
-import {
-  BASELINES,
-  greenPoints,
-  groupSg,
-  holeObservations,
-  lagStats,
-  lineStats,
-  makeCurve,
-  missTendency,
-  practicePriorities,
-  puttForStats,
-  puttsPerGir,
-  roundSgSeries,
-  sgSummary,
-  stimpBand,
-  type BaselineId,
-} from "@/lib/putting-stats";
-import { LABELS, type Round, type ScoreResult } from "@/lib/types";
+import { cardShadow } from "@/lib/card-shadow";
+import { hapticLight } from "@/lib/haptics";
+import { getRounds } from "@/lib/storage";
 
-type Period = "last5" | "3m" | "1y" | "all";
-
-const PERIODS: { value: Period; label: string }[] = [
-  { value: "last5", label: "直近5R" },
-  { value: "3m", label: "3ヶ月" },
-  { value: "1y", label: "1年" },
-  { value: "all", label: "全期間" },
-];
-
-const PUTT_FOR_SHORT: Record<ScoreResult, string> = {
-  eagle: "イーグル",
-  birdie: "バーディ",
-  par: "パー",
-  bogey: "ボギー",
-  double_bogey_plus: "ダボ以上",
-};
-
-function filterRounds(rounds: Round[], period: Period): Round[] {
-  const played = rounds.filter((r) => r.holes.some((h) => h.totalPutts > 0));
-  const sorted = [...played].sort((a, b) => b.date.localeCompare(a.date));
-  if (period === "last5") return sorted.slice(0, 5);
-  if (period === "all") return sorted;
-  const now = new Date();
-  const cutoff = period === "3m" ? new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()) : new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-  const ymd = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}-${String(cutoff.getDate()).padStart(2, "0")}`;
-  return sorted.filter((r) => r.date >= ymd);
+// Android（旧アーキテクチャ）でLayoutAnimationを有効化
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+import {
+  calculateAnalyticsSummary,
+  filterRoundsByPeriod,
+  formatPercentage,
+} from "@/lib/analytics";
+import { Round, AnalyticsSummary, MetadataAvgPuttsItem, LABELS } from "@/lib/types";
+
+type Period = "week" | "month" | "year" | "all";
+
+const PERIOD_LABELS: Record<Period, string> = {
+  week: "週",
+  month: "月",
+  year: "年",
+  all: "全期間",
+};
 
 export default function AnalyticsScreen() {
   const colors = useColors();
-  const router = useRouter();
-  const { width: screenW } = useWindowDimensions();
-  const contentW = Math.min(screenW, 760) - 32;
-  const chartW = contentW - 36;
-
   const [rounds, setRounds] = useState<Round[]>([]);
-  const [handicap, setHandicap] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>("all");
-  const [baseline, setBaseline] = useBaseline(handicap);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    technique: true,
+    environment: false,
+    mental: false,
+  });
+
+  const toggleGroup = (group: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    hapticLight();
+    setExpandedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
+  };
+
+  const loadData = useCallback(async () => {
+    const allRounds = await getRounds();
+    setRounds(allRounds);
+    const filtered = filterRoundsByPeriod(allRounds, period);
+    setSummary(calculateAnalyticsSummary(filtered));
+  }, [period]);
 
   useFocusEffect(
     useCallback(() => {
-      let alive = true;
-      Promise.all([getRoundsWithHoles(), getUserProfile().catch(() => null)])
-        .then(([r, p]) => {
-          if (!alive) return;
-          setRounds(r);
-          setHandicap(p?.handicap ?? null);
-        })
-        .catch((e) => console.warn("[analytics] load failed", e))
-        .finally(() => alive && setLoading(false));
-      return () => {
-        alive = false;
-      };
-    }, []),
+      loadData();
+    }, [loadData])
   );
 
-  const data = useMemo(() => {
-    const scoped = filterRounds(rounds, period);
-    const holes = holeObservations(scoped, baseline);
-    return {
-      scoped,
-      holes,
-      sg: sgSummary(holes),
-      curve: makeCurve(holes, baseline),
-      lag: lagStats(holes),
-      lines: lineStats(holes),
-      miss: missTendency(holes),
-      puttFor: puttForStats(holes),
-      gir: puttsPerGir(holes),
-      trend: roundSgSeries(holes),
-      priorities: practicePriorities(holes, baseline),
-      points: greenPoints(holes),
-      putters: groupSg(holes, (r) => r.putterName || null),
-      speeds: groupSg(holes, (r) => stimpBand(r.stimpmeter)),
-      grass: groupSg(holes, (r) => (r.grassType ? LABELS.grassType[r.grassType] : null)),
-      courses: groupSg(holes, (r) => r.courseName || null),
-    };
-  }, [rounds, period, baseline]);
+  const filteredRounds = filterRoundsByPeriod(rounds, period);
 
-  const base = BASELINES[baseline];
-
-  if (loading) {
+  if (!summary || filteredRounds.length === 0) {
     return (
-      <ScreenContainer className="items-center justify-center">
-        <ActivityIndicator size="large" color={colors.primary} />
+      <ScreenContainer className="p-4">
+        <Text className="text-2xl font-bold text-foreground mb-4">分析</Text>
+        <PeriodSelector period={period} onSelect={setPeriod} />
+        <View className="flex-1 items-center justify-center">
+          <IconSymbol name="chart.bar.fill" size={64} color={colors.muted} />
+          <Text className="text-foreground font-semibold text-lg mt-4">
+            データがありません
+          </Text>
+          <Text className="text-muted text-sm mt-2 text-center">
+            ラウンドデータを記録すると{"\n"}分析結果が表示されます
+          </Text>
+        </View>
       </ScreenContainer>
     );
   }
 
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={{ paddingBottom: 40, alignItems: "center" }} showsVerticalScrollIndicator={false}>
-        <View style={{ width: contentW, gap: 16, paddingTop: 12 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Text accessibilityRole="header" style={{ color: colors.foreground, fontSize: 28, fontWeight: "900", letterSpacing: -0.6 }}>
-              分析
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+        <View className="p-4 gap-4">
+          <Text className="text-2xl font-bold text-foreground">分析</Text>
+
+          <PeriodSelector period={period} onSelect={setPeriod} />
+
+          {/* サマリーカード（常時表示） */}
+          <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+            <Text className="text-lg font-semibold text-foreground mb-4">
+              パフォーマンスサマリー
             </Text>
-            <Pressable
-              onPress={() => router.push("/guide" as never)}
-              accessibilityRole="link"
-              style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 44, paddingHorizontal: 6 }}
-            >
-              <IconSymbol name="info.circle" size={18} color={colors.primary} />
-              <Text style={{ color: colors.primary, fontSize: 15, fontWeight: "700" }}>分析の見方</Text>
-            </Pressable>
-          </View>
-
-          <Segmented options={PERIODS} value={period} onChange={setPeriod} />
-          <View style={{ flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <Text style={{ color: colors.muted, fontSize: 14, fontWeight: "700" }}>比べる相手</Text>
-            {(Object.keys(BASELINES) as BaselineId[]).map((b) => (
-              <Chip key={b} label={BASELINES[b].short} selected={baseline === b} onPress={() => setBaseline(b)} />
-            ))}
-          </View>
-
-          {data.sg.holes === 0 ? (
-            <EmptyState onNew={() => router.push("/new-round" as never)} />
-          ) : (
-            <>
-              <SgHero sg={data.sg} baselineLabel={base.label} rounds={data.scoped.length} />
-              <GreenMapCard points={data.points} />
-              <PrioritiesCard priorities={data.priorities} baselineLabel={base.short} />
-
-              <Card>
-                <SectionTitle title="どの距離で得/損しているか" subtitle={`1打ごとの損得を打つ前の距離で分けて合計（1ラウンドあたり・${base.short}比）`} />
-                <DivergingBars
-                  width={chartW}
-                  rows={data.sg.byBand.map((b) => ({ label: b.band.label.replace(/（.*）/, ""), value: b.sgPer18 }))}
-                />
-                <Note>
-                  {data.sg.byBand.map((b) => `${b.band.label} ${b.putts}打`).join(" ／ ")}
-                </Note>
-              </Card>
-
-              <Card>
-                <SectionTitle title="距離別カップイン率" subtitle="1st に限らず全パット。破線は比べる相手の目安" />
-                <MakeCurveChart
-                  width={chartW}
-                  baselineLabel={base.label}
-                  points={data.curve.map((c) => ({
-                    label: c.band.label,
-                    short: Number.isFinite(c.band.max) ? `〜${c.band.max}` : `${c.band.min}〜`,
-                    attempts: c.attempts,
-                    makes: c.makes,
-                    rate: c.rate,
-                    low: c.ci.low,
-                    high: c.ci.high,
-                    baseline: c.baseline,
-                  }))}
-                />
-                <Note>縦の線は「本当の実力はこの範囲にありそう」という95%の幅。回数が少ないほど長くなります。</Note>
-              </Card>
-
-              <LagCard lag={data.lag} />
-              <LineCard lines={data.lines} miss={data.miss} chartW={chartW} baselineShort={base.short} />
-              <PuttForCard stats={data.puttFor} gir={data.gir} />
-
-              <Card>
-                <SectionTitle title="ラウンドごとの推移" subtitle={`1ラウンド（18H換算）あたりの損得・${base.short}比`} />
-                <TrendChart
-                  width={chartW}
-                  points={data.trend.map((t) => ({
-                    label: t.label,
-                    value: t.sgPer18,
-                    detail: `${t.label} ${t.courseName}：${formatStrokes(t.sgPer18)}打 ／ ${t.putts}パット（${t.holes}H）・3パット${t.threePutts}回`,
-                  }))}
-                />
-              </Card>
-
-              <ConditionsCard
-                chartW={chartW}
-                groups={[
-                  { title: "パター別", rows: data.putters },
-                  { title: "グリーンの速さ別", rows: data.speeds },
-                  { title: "芝の種類別", rows: data.grass },
-                  { title: "コース別", rows: data.courses },
-                ]}
+            <View className="flex-row flex-wrap gap-y-4">
+              <SummaryItem
+                label="ラウンド数"
+                value={summary.totalRounds.toString()}
+                unit="回"
               />
+              <SummaryItem
+                label="平均パット"
+                value={summary.averagePutts.toFixed(2)}
+                unit="/H"
+              />
+              <SummaryItem
+                label="1パット率"
+                value={summary.onePuttRate.toFixed(1)}
+                unit="%"
+                highlight
+              />
+              <SummaryItem
+                label="3パット率"
+                value={summary.threePuttRate.toFixed(1)}
+                unit="%"
+                warning={summary.threePuttRate > 10}
+              />
+            </View>
+          </View>
 
-              <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>
-                基準: {base.label}（{base.note}）。{data.sg.holes}ホール・{data.sg.rounds}ラウンドを集計。距離の記入があるホールだけが対象です。
+          {/* ── グループA: パット技術 ── */}
+          <SectionGroup
+            title="パット技術"
+            groupKey="technique"
+            expanded={expandedGroups.technique}
+            onToggle={toggleGroup}
+            sectionCount={5}
+            colors={colors}
+          >
+            {/* 距離別成功率 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                距離別カップイン率（1stパット）
               </Text>
-            </>
-          )}
+              {summary.distanceStats
+                .filter((s) => s.attempts > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.range}
+                    label={stat.range}
+                    value={stat.rate}
+                    count={stat.attempts}
+                    color={colors.primary}
+                  />
+                ))}
+              {summary.distanceStats.every((s) => s.attempts === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
+
+            {/* 傾斜別成功率（上下） */}
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                傾斜別カップイン率 - 上下（1stパット）
+              </Text>
+              {summary.slopeStats
+                .filter((s) => s.attempts > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.slope}
+                    label={LABELS.slopeUpDown[stat.slope]}
+                    value={stat.rate}
+                    count={stat.attempts}
+                    color={colors.accent}
+                  />
+                ))}
+              {summary.slopeStats.every((s) => s.attempts === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
+
+            {/* 左右傾斜別成功率 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                傾斜別カップイン率 - 左右（1stパット）
+              </Text>
+              {summary.slopeLeftRightStats
+                .filter((s) => s.attempts > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.slope}
+                    label={LABELS.slopeLeftRight[stat.slope]}
+                    value={stat.rate}
+                    count={stat.attempts}
+                    color={colors.accent}
+                  />
+                ))}
+              {summary.slopeLeftRightStats.every((s) => s.attempts === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
+
+            {/* タッチ強度別カップイン率 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                タッチ強度別カップイン率（1stパット）
+              </Text>
+              {summary.touchStats
+                .filter((s) => s.attempts > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.touch}
+                    label={LABELS.puttStrength[stat.touch]}
+                    value={stat.rate}
+                    count={stat.attempts}
+                    color={colors.warning}
+                  />
+                ))}
+              {summary.touchStats.every((s) => s.attempts === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
+
+            {/* ミス方向別傾向 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                ミス方向別傾向（全パット・ミスのみ）
+              </Text>
+              {summary.missedDirectionStats
+                .filter((s) => s.count > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.direction}
+                    label={`方向 ${stat.direction}`}
+                    value={stat.rate}
+                    count={stat.count}
+                    color={colors.error}
+                  />
+                ))}
+              {summary.missedDirectionStats.every((s) => s.count === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
+          </SectionGroup>
+
+          {/* ── グループB: 環境要因 ── */}
+          <SectionGroup
+            title="環境要因"
+            groupKey="environment"
+            expanded={expandedGroups.environment}
+            onToggle={toggleGroup}
+            sectionCount={4}
+            colors={colors}
+          >
+            {/* グリーンスピード別 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                グリーンスピード別平均パット
+              </Text>
+              {summary.greenSpeedStats
+                .filter((s) => s.rounds > 0)
+                .map((stat, _, arr) => {
+                  const maxValue = Math.max(...arr.map((s) => s.averagePutts), 0);
+                  const barWidth = maxValue > 0 ? (stat.averagePutts / maxValue) * 100 : 0;
+                  return (
+                    <View
+                      key={stat.speedRange}
+                      className="py-2 border-b border-border"
+                    >
+                      <View className="flex-row items-center justify-between mb-1">
+                        <Text className="text-foreground">{stat.speedRange}</Text>
+                        <View className="flex-row items-baseline">
+                          <Text className="text-xl font-bold text-foreground">
+                            {stat.averagePutts.toFixed(2)}
+                          </Text>
+                          <Text className="text-muted text-sm ml-1">/H</Text>
+                          <Text className="text-muted text-xs ml-2">
+                            ({stat.rounds}R)
+                          </Text>
+                        </View>
+                      </View>
+                      <View className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+                        <View
+                          className="h-full bg-primary rounded-full"
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </View>
+                    </View>
+                  );
+                })}
+              {summary.greenSpeedStats.every((s) => s.rounds === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
+
+            <MetadataSection title="芝の種類別平均パット" data={summary.grassTypeStats} />
+            <MetadataSection title="天候別平均パット" data={summary.weatherStats} />
+            <MetadataSection title="コース別平均パット" data={summary.courseStats} />
+          </SectionGroup>
+
+          {/* ── グループC: メンタル・装備 ── */}
+          <SectionGroup
+            title="メンタル・装備"
+            groupKey="mental"
+            expanded={expandedGroups.mental}
+            onToggle={toggleGroup}
+            sectionCount={2}
+            colors={colors}
+          >
+            {/* 心理状態別 */}
+            <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+              <Text className="text-lg font-semibold text-foreground mb-4">
+                心理状態別カップイン率（1stパット）
+              </Text>
+              {summary.mentalStats
+                .filter((s) => s.attempts > 0)
+                .map((stat) => (
+                  <BarRow
+                    key={stat.state}
+                    label={LABELS.mentalState[stat.state]}
+                    value={stat.rate}
+                    count={stat.attempts}
+                    color={
+                      (stat.state === 'P' || stat.state === 1 || stat.state === 2)
+                        ? colors.success
+                        : (stat.state === 'N' || stat.state === 4 || stat.state === 5)
+                        ? colors.error
+                        : colors.warning
+                    }
+                  />
+                ))}
+              {summary.mentalStats.every((s) => s.attempts === 0) && (
+                <Text className="text-muted text-center py-4">データなし</Text>
+              )}
+            </View>
+
+            <MetadataSection title="パター別平均パット" data={summary.putterStats} />
+          </SectionGroup>
         </View>
       </ScrollView>
     </ScreenContainer>
   );
 }
 
-// ─── 結論カード ─────────────────────────────────────────────────────────────
+function PeriodSelector({
+  period,
+  onSelect,
+}: {
+  period: Period;
+  onSelect: (p: Period) => void;
+}) {
+  const periods: Period[] = ["week", "month", "year", "all"];
 
-function SgHero({ sg, baselineLabel, rounds }: { sg: ReturnType<typeof sgSummary>; baselineLabel: string; rounds: number }) {
-  const pal = useDivergingColors();
-  const good = sg.sgPer18 >= 0;
-  const skill = -sg.sgPer18;
   return (
-    <View style={{ backgroundColor: "#10271A", borderRadius: 24, padding: 20 }}>
-      <Text style={{ color: "#B9C7BC", fontSize: 14, fontWeight: "700" }}>{`${baselineLabel}と比べて（${rounds}ラウンド）`}</Text>
-      <View style={{ flexDirection: "row", alignItems: "baseline", marginTop: 6, gap: 8 }}>
-        <Text style={{ color: "#F3EFE4", fontSize: 52, fontWeight: "900", letterSpacing: -1.5, fontVariant: ["tabular-nums"] }}>
-          {formatStrokes(sg.sgPer18)}
-        </Text>
-        <Text style={{ color: "#F3EFE4", fontSize: 17, fontWeight: "700" }}>打 / ラウンド</Text>
-      </View>
-      <Text style={{ color: "#F3EFE4", fontSize: 16, marginTop: 2, lineHeight: 23 }}>
-        {Math.abs(sg.sgPer18) < 0.15
-          ? "ほぼ同じ腕前です"
-          : good
-            ? `パッティングで1ラウンド約${sg.sgPer18.toFixed(1)}打を稼いでいます`
-            : `パッティングで1ラウンド約${(-sg.sgPer18).toFixed(1)}打を失っています`}
+    <View className="flex-row bg-surface rounded-xl p-1 border border-border">
+      {periods.map((p) => (
+        <TouchableOpacity
+          key={p}
+          className={`flex-1 py-2 rounded-lg ${
+            period === p ? "bg-primary" : ""
+          }`}
+          onPress={() => onSelect(p)}
+          activeOpacity={0.8}
+        >
+          <Text
+            className={`text-center font-medium ${
+              period === p ? "text-white" : "text-muted"
+            }`}
+          >
+            {PERIOD_LABELS[p]}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+function SummaryItem({
+  label,
+  value,
+  unit,
+  highlight,
+  warning,
+}: {
+  label: string;
+  value: string;
+  unit: string;
+  highlight?: boolean;
+  warning?: boolean;
+}) {
+  return (
+    <View className="w-1/2 items-center">
+      <Text
+        className={`text-3xl font-bold ${
+          highlight ? "text-success" : warning ? "text-error" : "text-foreground"
+        }`}
+      >
+        {value}
+        <Text className="text-lg">{unit}</Text>
       </Text>
+      <Text className="text-muted text-sm mt-1">{label}</Text>
+    </View>
+  );
+}
 
-      {/* パット数の分解 */}
-      <View style={{ marginTop: 18, backgroundColor: "#FFFFFF0F", borderRadius: 16, padding: 14 }}>
-        <Text style={{ color: "#B9C7BC", fontSize: 13, fontWeight: "700" }}>1ラウンドのパット数の内訳</Text>
-        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8, flexWrap: "wrap", gap: 6 }}>
-          <Big value={sg.actualPer18.toFixed(1)} label="実際" />
-          <Op>=</Op>
-          <Big value={sg.expectedPer18.toFixed(1)} label="距離の難しさ" />
-          <Op>{skill >= 0 ? "+" : "−"}</Op>
-          <Big value={Math.abs(skill).toFixed(1)} label="腕前の差" color={skill > 0 ? pal.loss : pal.gain} />
+function SectionGroup({
+  title,
+  groupKey,
+  expanded,
+  onToggle,
+  children,
+  sectionCount,
+  colors,
+}: {
+  title: string;
+  groupKey: string;
+  expanded: boolean;
+  onToggle: (key: string) => void;
+  children: React.ReactNode;
+  sectionCount: number;
+  colors: ReturnType<typeof useColors>;
+}) {
+  return (
+    <View>
+      <TouchableOpacity
+        className="flex-row items-center justify-between bg-surface rounded-xl px-4 py-3 border border-border"
+        onPress={() => onToggle(groupKey)}
+        activeOpacity={0.7}
+      >
+        <View className="flex-row items-center" style={{ gap: 8 }}>
+          <IconSymbol
+            name="chevron.right"
+            size={16}
+            color={colors.muted}
+            style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
+          />
+          <Text className="text-lg font-semibold text-foreground">{title}</Text>
         </View>
-        <Text style={{ color: "#B9C7BC", fontSize: 13, marginTop: 8, lineHeight: 19 }}>
-          「距離の難しさ」は、同じ1st パットの距離から{baselineLabel}が打った場合のパット数。パット数が多くても、アプローチが遠いせいなら腕前の問題ではありません。
-        </Text>
-      </View>
+        <Text className="text-muted text-sm">{sectionCount}項目</Text>
+      </TouchableOpacity>
+      {expanded && (
+        <View style={{ gap: 16, marginTop: 16 }}>
+          {children}
+        </View>
+      )}
     </View>
   );
 }
 
-function Big({ value, label, color }: { value: string; label: string; color?: string }) {
+function MetadataSection({
+  title,
+  data,
+}: {
+  title: string;
+  data: MetadataAvgPuttsItem[];
+}) {
+  const maxValue = Math.max(...data.map((d) => d.averagePutts), 0);
   return (
-    <View style={{ alignItems: "center", minWidth: 64 }}>
-      <Text style={{ color: color ?? "#F3EFE4", fontSize: 24, fontWeight: "900", fontVariant: ["tabular-nums"] }}>{value}</Text>
-      <Text style={{ color: "#B9C7BC", fontSize: 12, fontWeight: "700" }}>{label}</Text>
-    </View>
-  );
-}
-
-function Op({ children }: { children: string }) {
-  return <Text style={{ color: "#B9C7BC", fontSize: 20, fontWeight: "700", marginBottom: 14 }}>{children}</Text>;
-}
-
-// ─── 練習の優先順位 ─────────────────────────────────────────────────────────
-
-function PrioritiesCard({ priorities, baselineLabel }: { priorities: ReturnType<typeof practicePriorities>; baselineLabel: string }) {
-  const colors = useColors();
-  return (
-    <Card>
-      <SectionTitle title="練習の優先順位" subtitle={`${baselineLabel}と比べて失っている打数が大きい順`} />
-      {priorities.length === 0 ? (
-        <Text style={{ color: colors.foreground, fontSize: 16, lineHeight: 24 }}>
-          目立って失っている分野はありません。この調子で記録を続けると、弱点がはっきりしてきます。
-        </Text>
-      ) : (
-        <View style={{ gap: 14 }}>
-          {priorities.map((p, i) => (
-            <View key={p.id} style={{ flexDirection: "row", gap: 12 }}>
-              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" }}>
-                <Text style={{ color: colors.onPrimary, fontSize: 16, fontWeight: "900" }}>{i + 1}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-                  <Text style={{ color: colors.foreground, fontSize: 17, fontWeight: "800", flex: 1 }}>{p.title}</Text>
-                  <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: "800", fontVariant: ["tabular-nums"] }}>
-                    {`${p.strokesPer18.toFixed(1)}打/R`}
+    <View className="bg-surface rounded-2xl p-4 border border-border" style={cardShadow}>
+      <Text className="text-lg font-semibold text-foreground mb-4">
+        {title}
+      </Text>
+      {data.length > 0 ? (
+        data.map((stat) => {
+          const barWidth = maxValue > 0 ? (stat.averagePutts / maxValue) * 100 : 0;
+          return (
+            <View
+              key={stat.label}
+              className="py-2 border-b border-border"
+            >
+              <View className="flex-row items-center justify-between mb-1">
+                <Text className="text-foreground flex-1" numberOfLines={1}>
+                  {stat.label}
+                </Text>
+                <View className="flex-row items-baseline">
+                  <Text className="text-xl font-bold text-foreground">
+                    {stat.averagePutts.toFixed(2)}
+                  </Text>
+                  <Text className="text-muted text-sm ml-1">/H</Text>
+                  <Text className="text-muted text-xs ml-2">
+                    ({stat.rounds}R)
                   </Text>
                 </View>
-                <Text style={{ color: colors.muted, fontSize: 14, marginTop: 2 }}>{p.evidence}</Text>
-                <View style={{ marginTop: 8, padding: 12, borderRadius: 12, backgroundColor: colors.background }}>
-                  <Text style={{ color: colors.foreground, fontSize: 15, lineHeight: 22 }}>{`練習：${p.drill}`}</Text>
-                </View>
+              </View>
+              <View className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+                <View
+                  className="h-full bg-primary rounded-full"
+                  style={{ width: `${barWidth}%` }}
+                />
               </View>
             </View>
-          ))}
-        </View>
+          );
+        })
+      ) : (
+        <Text className="text-muted text-center py-4">データなし</Text>
       )}
-    </Card>
+    </View>
   );
 }
 
-// ─── ロングパット ──────────────────────────────────────────────────────────
+function BarRow({
+  label,
+  value,
+  count,
+  color,
+}: {
+  label: string;
+  value: number;
+  count: number;
+  color: string;
+}) {
+  const screenWidth = Dimensions.get("window").width;
+  const maxBarWidth = screenWidth - 180;
+  const barWidth = Math.max((value / 100) * maxBarWidth, 4);
 
-function LagCard({ lag }: { lag: ReturnType<typeof lagStats> }) {
-  const colors = useColors();
-  if (lag.attempts === 0) return null;
   return (
-    <Card>
-      <SectionTitle title="ロングパットの寄せ（6m以上）" subtitle={`${lag.attempts}回の 1st パット`} />
-      <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
-        <StatTile label="平均の残り" value={lag.avgLeave.toFixed(1)} unit="m" note={`元の距離の${(lag.leaveRatio * 100).toFixed(0)}%`} />
-        <StatTile label="1m以内に寄った" value={lag.within1m.toFixed(0)} unit="%" />
-        <StatTile label="3パット率" value={lag.threePuttRate.toFixed(0)} unit="%" tone={lag.threePuttRate > 15 ? "bad" : "neutral"} />
+    <View className="flex-row items-center py-2 border-b border-border">
+      <Text className="text-foreground w-24">{label}</Text>
+      <View className="flex-1 flex-row items-center">
+        <View
+          style={{
+            width: barWidth,
+            height: 20,
+            backgroundColor: color,
+            borderRadius: 4,
+          }}
+        />
+        <Text className="text-foreground font-semibold ml-2">
+          {formatPercentage(value)}
+        </Text>
       </View>
-      {lag.shortRate != null && lag.missRecorded >= 5 && (
-        <View style={{ marginTop: 16 }}>
-          <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: "700", marginBottom: 8 }}>外れたときの向き（{lag.missRecorded}回）</Text>
-          <SplitMeter left={lag.shortRate} right={100 - lag.shortRate} leftLabel="ショート" rightLabel="オーバー" />
-          <Note>
-            {lag.shortRate >= 60
-              ? "ショートが多めです。カップの40cm先に止めるつもりで打つと、入る確率も上がります。"
-              : lag.shortRate <= 35
-                ? "オーバーが多めです。返しのパットが長く残っていないか、残り距離と合わせて確認しましょう。"
-                : "ショートとオーバーのバランスは良好です。"}
-          </Note>
-        </View>
-      )}
-      <View style={{ marginTop: 14, gap: 6 }}>
-        {lag.byBand.filter((b) => b.attempts > 0).map((b) => (
-          <View key={b.band.key} style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: colors.foreground, fontSize: 15 }}>{b.band.label}</Text>
-            <Text style={{ color: colors.muted, fontSize: 15, fontVariant: ["tabular-nums"] }}>
-              {`残り ${b.avgLeave.toFixed(1)}m ・ 3パット ${b.threePuttRate.toFixed(0)}% ・ ${b.attempts}回`}
-            </Text>
-          </View>
-        ))}
-      </View>
-    </Card>
-  );
-}
-
-// ─── ライン別 ──────────────────────────────────────────────────────────────
-
-function LineCard({ lines, miss, chartW, baselineShort }: { lines: ReturnType<typeof lineStats>; miss: ReturnType<typeof missTendency>; chartW: number; baselineShort: string }) {
-  const colors = useColors();
-  const ud = ["flat", "uphill", "downhill"] as const;
-  const lr = ["straight", "left", "right"] as const;
-  const total = ud.reduce((s, k) => s + lines.ud[k].putts, 0);
-  if (total === 0) return null;
-  return (
-    <Card>
-      <SectionTitle title="ライン別の得意・苦手" subtitle={`7m以内のパットの1打あたり損得（距離の違いは補正済み・${baselineShort}比）`} />
-      <LineHeatmap
-        width={chartW}
-        rows={["平ら", "上り", "下り"]}
-        cols={["まっすぐ", "左へ", "右へ"]}
-        cells={ud.map((u) => lr.map((l) => ({ value: lines.matrix[u][l].sgPerPutt, n: lines.matrix[u][l].putts })))}
-      />
-      {miss.recorded >= 5 && (
-        <View style={{ marginTop: 16, gap: 6 }}>
-          <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: "700" }}>1st が外れたときショートした割合</Text>
-          {ud.map((k) =>
-            miss.byUD[k].recorded > 0 ? (
-              <View key={k} style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={{ color: colors.foreground, fontSize: 15 }}>{{ flat: "平ら", uphill: "上り", downhill: "下り" }[k]}</Text>
-                <Text style={{ color: colors.muted, fontSize: 15, fontVariant: ["tabular-nums"] }}>
-                  {`${miss.byUD[k].shortRate.toFixed(0)}%（${miss.byUD[k].recorded}回）`}
-                </Text>
-              </View>
-            ) : null,
-          )}
-        </View>
-      )}
-      <Note>数字は1回あたりの損得（打）。回数が10回未満のマスは参考程度に見てください。</Note>
-    </Card>
-  );
-}
-
-// ─── 何のパット別 ──────────────────────────────────────────────────────────
-
-function PuttForCard({ stats, gir }: { stats: ReturnType<typeof puttForStats>; gir: ReturnType<typeof puttsPerGir> }) {
-  const colors = useColors();
-  if (stats.length === 0) return null;
-  return (
-    <Card>
-      <SectionTitle title="何のパットだったか" subtitle="スコアがかかったパットの決定率" />
-      <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        {gir.holes > 0 && <StatTile label="パーオン時の平均パット" value={gir.avg.toFixed(2)} note={`${gir.holes}ホール`} />}
-        {stats.find((s) => s.puttFor === "birdie") && (
-          <StatTile label="バーディ奪取率" value={stats.find((s) => s.puttFor === "birdie")!.conversion.toFixed(0)} unit="%" note="バーディパットを1パット" />
-        )}
-        {stats.find((s) => s.puttFor === "par") && (
-          <StatTile label="パーセーブ率" value={stats.find((s) => s.puttFor === "par")!.conversion.toFixed(0)} unit="%" note="パーパットを1パット" />
-        )}
-      </View>
-      <View style={{ flexDirection: "row", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        {["", "回数", "平均距離", "1パット", "3パット"].map((h, i) => (
-          <Text key={h || i} style={{ flex: i === 0 ? 1.3 : 1, color: colors.muted, fontSize: 13, fontWeight: "700", textAlign: i === 0 ? "left" : "right" }}>
-            {h}
-          </Text>
-        ))}
-      </View>
-      {stats.map((s) => (
-        <View key={s.puttFor} style={{ flexDirection: "row", paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-          <Text style={{ flex: 1.3, color: colors.foreground, fontSize: 15, fontWeight: "700" }}>{PUTT_FOR_SHORT[s.puttFor]}</Text>
-          {[`${s.holes}`, `${s.avgFirstMeters.toFixed(1)}m`, `${s.conversion.toFixed(0)}%`, `${s.threePuttRate.toFixed(0)}%`].map((v, i) => (
-            <Text key={i} style={{ flex: 1, color: colors.foreground, fontSize: 15, textAlign: "right", fontVariant: ["tabular-nums"] }}>
-              {v}
-            </Text>
-          ))}
-        </View>
-      ))}
-    </Card>
-  );
-}
-
-// ─── 条件別 ────────────────────────────────────────────────────────────────
-
-function ConditionsCard({ groups, chartW }: { groups: { title: string; rows: ReturnType<typeof groupSg> }[]; chartW: number }) {
-  const colors = useColors();
-  const [open, setOpen] = useState(0);
-  const usable = groups.filter((g) => g.rows.length > 0);
-  if (usable.length === 0) return null;
-  const g = usable[Math.min(open, usable.length - 1)];
-  return (
-    <Card>
-      <SectionTitle title="条件別の比較" subtitle="1ラウンドあたりの損得。1st パットの距離の違いを補正しているので、パター同士も公平に比べられます" />
-      <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        {usable.map((x, i) => (
-          <Chip key={x.title} label={x.title} selected={g === x} onPress={() => setOpen(i)} />
-        ))}
-      </View>
-      <DivergingBars width={chartW} rows={g.rows.slice(0, 6).map((r) => ({ label: r.label, value: r.sgPer18 }))} digits={1} />
-      <View style={{ marginTop: 8, gap: 4 }}>
-        {g.rows.slice(0, 6).map((r) => (
-          <Text key={r.label} style={{ color: colors.muted, fontSize: 13 }}>
-            {`${r.label}：${r.rounds}ラウンド・${r.puttsPer18.toFixed(1)}パット/R`}
-          </Text>
-        ))}
-      </View>
-    </Card>
-  );
-}
-
-function EmptyState({ onNew }: { onNew: () => void }) {
-  const colors = useColors();
-  return (
-    <Card style={{ alignItems: "center", paddingVertical: 32 }}>
-      <IconSymbol name="chart.bar.fill" size={40} color={colors.muted} />
-      <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800", marginTop: 12 }}>まだ分析できるデータがありません</Text>
-      <Text style={{ color: colors.muted, fontSize: 15, textAlign: "center", marginTop: 6, lineHeight: 22 }}>
-        パッティングカードに記入してラウンドを記録すると、{"\n"}ここに損得と練習の優先順位が表示されます。
-      </Text>
-      <Pressable onPress={onNew} style={{ marginTop: 16, backgroundColor: colors.primary, borderRadius: 14, paddingHorizontal: 20, minHeight: 48, justifyContent: "center" }}>
-        <Text style={{ color: colors.onPrimary, fontSize: 16, fontWeight: "800" }}>ラウンドを記録する</Text>
-      </Pressable>
-    </Card>
+      <Text className="text-muted text-xs w-12 text-right">n={count}</Text>
+    </View>
   );
 }

@@ -1,7 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
-import { clearUserCache } from "./_core/context";
 import {
   createCourse,
   createPutter,
@@ -19,13 +18,12 @@ import {
   getPuttsByHoles,
   getRound,
   getRounds,
-  getRoundsWithHoles,
   getUserProfile,
-  saveHoles,
   updateCourse,
   updatePutter,
   updateRound,
-  updateUserName,
+  upsertHole,
+  upsertPutts,
   upsertUserProfile,
 } from "./db";
 
@@ -86,16 +84,17 @@ const puttInputSchema = z.object({
   lengthSteps: z.number().int().nullable().optional(),
   lengthMeters: z.number().nullable().optional(),
   distanceMeters: z.number().nullable().optional(),
+  missedDirection: z.number().int().min(1).max(5).nullable().optional(),
+  touch: z.number().int().min(1).max(5).nullable().optional(),
   lineUD: slopeUpDownSchema.nullable().optional(),
   lineLR: slopeLeftRightSchema.nullable().optional(),
-  missLength: z.enum(["short", "long"]).nullable().optional(),
+  mental: z.string().max(4).nullable().optional(),
 });
 
 // ─── Hole input schema (used in upsertHoles) ─────────────────────────────────
 
 const holeInputSchema = z.object({
   holeNumber: z.number().int().min(1).max(18),
-  scoreResult: scoreResultSchema.default("par"),
   totalPutts: z.number().int().min(0).optional(),
   putts: z.array(puttInputSchema).max(3).optional(),
 });
@@ -103,16 +102,14 @@ const holeInputSchema = z.object({
 // ─── userProfile router ───────────────────────────────────────────────────────
 
 export const userProfileRouter = router({
-  /** 表示名は users.name に保存されているので、プロフィール行と合わせて返す。 */
   get: protectedProcedure.query(async ({ ctx }) => {
     const profile = await getUserProfile(ctx.user.id);
-    return { profile: profile ?? null, name: ctx.user.name ?? null };
+    return profile ?? null;
   }),
 
   upsert: protectedProcedure
     .input(
       z.object({
-        name: z.string().max(128).optional(),
         gender: genderSchema.optional(),
         birthDate: z.string().max(10).optional(),
         handicap: z.number().optional(),
@@ -120,13 +117,7 @@ export const userProfileRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { name, ...profileInput } = input;
-      if (name !== undefined) {
-        await updateUserName(ctx.user.id, name.trim() || null);
-        clearUserCache(); // 次のリクエストから新しい名前を返す
-      }
-      const profile = await upsertUserProfile(ctx.user.id, profileInput);
-      return { profile, name: name !== undefined ? name.trim() || null : ctx.user.name ?? null };
+      return upsertUserProfile(ctx.user.id, input);
     }),
 });
 
@@ -268,13 +259,6 @@ export const roundsRouter = router({
     return getRounds(ctx.user.id);
   }),
 
-  /** Like list, but with all holes and putts hydrated (for analytics). */
-  listWithHoles: protectedProcedure
-    .input(z.object({ fromDate: z.string().date().optional() }))
-    .query(async ({ ctx, input }) => {
-      return getRoundsWithHoles(ctx.user.id, input.fromDate);
-    }),
-
   /** Returns the round with all nested holes and putts. */
   get: protectedProcedure
     .input(z.object({ id: z.number().int() }))
@@ -391,9 +375,8 @@ export const roundsRouter = router({
 
 export const holesRouter = router({
   /**
-   * Saves all holes (up to 18) for a round in one transaction.
-   * Each hole's putts are fully replaced, and the round's totalPutts is
-   * recomputed on the server from every hole in the DB.
+   * Saves all holes (up to 18) for a round in one call.
+   * Each hole's putts are fully replaced.
    * Verifies the round belongs to the authenticated user before writing.
    */
   upsertHoles: protectedProcedure
@@ -410,28 +393,24 @@ export const holesRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Round not found" });
       }
 
-      const seen = new Set<number>();
-      for (const hole of input.holes) {
-        if (seen.has(hole.holeNumber)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Hole ${hole.holeNumber} is specified more than once`,
-          });
-        }
-        seen.add(hole.holeNumber);
-      }
+      const savedHoles = await Promise.all(
+        input.holes.map(async (holeInput) => {
+          const { holeNumber, totalPutts, putts: puttsInput } = holeInput;
 
-      const result = await saveHoles(
-        input.roundId,
-        input.holes.map((hole) => ({
-          holeNumber: hole.holeNumber,
-          scoreResult: hole.scoreResult,
-          totalPutts: hole.totalPutts ?? hole.putts?.length ?? 0,
-          putts: hole.putts ?? [],
-        })),
+          const hole = await upsertHole(input.roundId, holeNumber, {
+            totalPutts: totalPutts ?? 0,
+          });
+
+          const savedPutts =
+            puttsInput && puttsInput.length > 0
+              ? await upsertPutts(hole.id, puttsInput)
+              : await upsertPutts(hole.id, []);
+
+          return { ...hole, putts: savedPutts };
+        }),
       );
 
-      return { roundId: input.roundId, holes: result.holes, totalPutts: result.totalPutts };
+      return { roundId: input.roundId, holes: savedHoles };
     }),
 });
 

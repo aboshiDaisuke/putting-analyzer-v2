@@ -124,7 +124,7 @@ export default function PutterFormScreen() {
             className="bg-primary px-4 py-2 rounded-lg"
             style={{ opacity: isSaving ? 0.5 : 1 }}
           >
-            <Text className="text-onPrimary font-semibold">
+            <Text className="text-white font-semibold">
               {isSaving ? "保存中..." : "保存"}
             </Text>
           </TouchableOpacity>
@@ -270,7 +270,7 @@ export default function PutterFormScreen() {
                     >
                       <Text
                         className={`font-medium ${
-                          ranking === r ? "text-onPrimary" : "text-foreground"
+                          ranking === r ? "text-white" : "text-foreground"
                         }`}
                       >
                         {LABELS.putterRanking[r]}

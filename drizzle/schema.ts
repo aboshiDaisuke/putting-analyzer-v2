@@ -1,6 +1,5 @@
 import {
   boolean,
-  index,
   integer,
   pgEnum,
   pgTable,
@@ -8,7 +7,6 @@ import {
   serial,
   text,
   timestamp,
-  uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
 
@@ -60,8 +58,6 @@ export const slopeLeftRightEnum = pgEnum("slopeLeftRight", [
   "left_right",
   "right_left",
 ]);
-
-export const missLengthEnum = pgEnum("missLength", ["short", "long"]);
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
@@ -117,7 +113,7 @@ export const putters = pgTable("putters", {
   ranking: rankingEnum("ranking").default("ace"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (t) => [index("putters_userId_idx").on(t.userId)]);
+});
 
 export type Putter = typeof putters.$inferSelect;
 export type InsertPutter = typeof putters.$inferInsert;
@@ -133,7 +129,7 @@ export const courses = pgTable("courses", {
   location: varchar("location", { length: 256 }),
   greens: text("greens").array(), // ["A", "B"] など
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (t) => [index("courses_userId_idx").on(t.userId)]);
+});
 
 export type Course = typeof courses.$inferSelect;
 export type InsertCourse = typeof courses.$inferInsert;
@@ -165,7 +161,7 @@ export const rounds = pgTable("rounds", {
   totalPutts: integer("totalPutts").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (t) => [index("rounds_userId_idx").on(t.userId)]);
+});
 
 export type Round = typeof rounds.$inferSelect;
 export type InsertRound = typeof rounds.$inferInsert;
@@ -178,14 +174,10 @@ export const holes = pgTable("holes", {
     .notNull()
     .references(() => rounds.id, { onDelete: "cascade" }),
   holeNumber: integer("holeNumber").notNull(), // 1-18
-  scoreResult: scoreResultEnum("scoreResult").default("par").notNull(),
   totalPutts: integer("totalPutts").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (t) => [
-  // 同じラウンドに同じホール番号は1行だけ（並行保存による重複を防ぐ）
-  uniqueIndex("holes_roundId_holeNumber_unique").on(t.roundId, t.holeNumber),
-]);
+});
 
 export type Hole = typeof holes.$inferSelect;
 export type InsertHole = typeof holes.$inferInsert;
@@ -200,7 +192,7 @@ export const putts = pgTable("putts", {
   strokeNumber: integer("strokeNumber").notNull(), // 1, 2, 3
   cupIn: boolean("cupIn").default(false).notNull(),
   distPrev: integer("distPrev"), // 前パットからの残り距離(yd)
-  result: scoreResultEnum("result"), // このパットが入れば何のスコアか（バーディパット＝birdie）
+  result: scoreResultEnum("result"),
   lengthSteps: integer("lengthSteps"), // 歩数
   lengthMeters: real("lengthMeters"), // メートル直入力
   distanceMeters: real("distanceMeters"), // 計算済み距離(m)
@@ -209,10 +201,9 @@ export const putts = pgTable("putts", {
   lineUD: slopeUpDownEnum("lineUD"),
   lineLR: slopeLeftRightEnum("lineLR"),
   mental: varchar("mental", { length: 4 }), // "P", "1"-"5", "N"
-  missLength: missLengthEnum("missLength"), // 外れたときショート/オーバー（カード v3 の「短/長」）
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (t) => [index("putts_holeId_idx").on(t.holeId)]);
+});
 
 export type Putt = typeof putts.$inferSelect;
 export type InsertPutt = typeof putts.$inferInsert;

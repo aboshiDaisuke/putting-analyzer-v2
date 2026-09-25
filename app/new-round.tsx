@@ -40,11 +40,7 @@ export default function NewRoundScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Step 1: 日時・天気
-  // toISOString() は UTC なので日本時間の朝9時前だと前日になる。端末の日付で作る
-  const [date, setDate] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  });
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [weather, setWeather] = useState<Weather>("sunny");
   const [windSpeed, setWindSpeed] = useState<WindSpeed>("calm");
   const [temperature, setTemperature] = useState("");
@@ -94,11 +90,6 @@ export default function NewRoundScreen() {
 
   const handleCreateRound = async () => {
     setError(null);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(date).getTime())) {
-      setError("日付は YYYY-MM-DD 形式で入力してください");
-      setStep(1);
-      return;
-    }
     if (!courseName) {
       setError("コース名を入力してください");
       return;
@@ -111,7 +102,7 @@ export default function NewRoundScreen() {
     const selectedPutter = putters.find((p) => p.id === selectedPutterId);
 
     const roundData: Omit<Round, "id" | "createdAt" | "updatedAt"> = {
-      date, // "YYYY-MM-DD"（Date/toISOString を経由するとタイムゾーンで日付がずれる）
+      date: new Date(date).toISOString(),
       weather,
       temperature: temperature ? parseFloat(temperature) : undefined,
       windSpeed,
@@ -138,7 +129,7 @@ export default function NewRoundScreen() {
     try {
       const newRound = await saveRound(roundData);
       hapticSuccess();
-      router.replace(`/round/${newRound.id}` as any); // 撮影か手入力かをラウンド画面で選ぶ
+      router.replace(`/hole-input/${newRound.id}` as any);
     } catch (err) {
       setError("ラウンドの作成に失敗しました。もう一度お試しください。");
       setIsSubmitting(false);
@@ -174,7 +165,7 @@ export default function NewRoundScreen() {
               onPress={() => setWeather(w)}
             >
               <Text
-                className={weather === w ? "text-onPrimary" : "text-foreground"}
+                className={weather === w ? "text-white" : "text-foreground"}
               >
                 {LABELS.weather[w]}
               </Text>
@@ -197,7 +188,7 @@ export default function NewRoundScreen() {
               onPress={() => setWindSpeed(w)}
             >
               <Text
-                className={windSpeed === w ? "text-onPrimary" : "text-foreground"}
+                className={windSpeed === w ? "text-white" : "text-foreground"}
               >
                 {LABELS.windSpeed[w]}
               </Text>
@@ -310,7 +301,7 @@ export default function NewRoundScreen() {
               onPress={() => setGrassType(g)}
             >
               <Text
-                className={grassType === g ? "text-onPrimary" : "text-foreground"}
+                className={grassType === g ? "text-white" : "text-foreground"}
               >
                 {LABELS.grassType[g]}
               </Text>
@@ -371,7 +362,7 @@ export default function NewRoundScreen() {
             >
               <Text
                 className={
-                  greenCondition === c ? "text-onPrimary font-medium" : "text-foreground"
+                  greenCondition === c ? "text-white font-medium" : "text-foreground"
                 }
               >
                 {LABELS.greenCondition[c]}
@@ -403,7 +394,7 @@ export default function NewRoundScreen() {
               onPress={() => setRoundType(r)}
             >
               <Text
-                className={roundType === r ? "text-onPrimary" : "text-foreground"}
+                className={roundType === r ? "text-white" : "text-foreground"}
               >
                 {LABELS.roundType[r]}
               </Text>
@@ -428,7 +419,7 @@ export default function NewRoundScreen() {
               >
                 <Text
                   className={
-                    competitionFormat === f ? "text-onPrimary" : "text-foreground"
+                    competitionFormat === f ? "text-white" : "text-foreground"
                   }
                 >
                   {LABELS.competitionFormat[f]}
@@ -556,7 +547,7 @@ export default function NewRoundScreen() {
             }}
             style={{ opacity: isSubmitting ? 0.6 : 1 }}
           >
-            <Text className="text-onPrimary font-medium">
+            <Text className="text-white font-medium">
               {isSubmitting ? "作成中..." : step < 4 ? "次へ" : "ラウンド開始"}
             </Text>
           </TouchableOpacity>
