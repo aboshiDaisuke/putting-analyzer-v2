@@ -2,7 +2,7 @@
 
 ## 現在の状態
 
-- 作業ブランチ: `fable5/gemini3-ui-refresh`
+- 作業ブランチ: `fable5/v3-card-analytics-3d`（`fable5/gemini3-ui-refresh` から分岐。2026-09-25 の v3 改修）
 - GitHub: `aboshiDaisuke/putting-analyzer-v2`
 - ドラフトPR: https://github.com/aboshiDaisuke/putting-analyzer-v2/pull/1
 - Supabase project ref: `ijrrzinlhqhinlmzunzn` (`putting-analyzer`)
@@ -25,19 +25,35 @@
 - OCR: 台形補正（Web）→ 枠の画素判定 → responseSchema → お手本画像 few-shot → 二重読み → 整合性チェック。
   詳細は FABLE5_VERSION.md。`OCR_VERIFY_MODEL` を Vercel 環境変数に追加すると検証モデルを変更/無効化できる（未設定なら lite で有効）
 - オフライン保存キュー、距離別チャートのツアー目安、CSV エクスポート
-- カードのレイアウトを変えたら `scripts/ocr/measure-layout.js` で `lib/ocr-layout.ts` を再生成すること
+- （v2 の `scripts/ocr/`・`lib/ocr-layout.ts` は v3 で廃止）
+
+## 2026-09-25 v3 改修（カード・OCR・分析・3D）
+
+- **カード v3**: 1枚で18ホール（A4 に表 OUT・裏 IN を印刷して二つ折り、175×105mm = 規則のポケットサイズ以内）。
+  座標の正は `lib/scorecard/layout.ts`（mm）。SVG は `lib/scorecard/card-svg.ts`、印刷ページは
+  `npx tsx scripts/scorecard/build-card.ts` → `public/scorecard/putting-card-v3.html`、PDF は `scripts/scorecard/render-pdf.js`。
+  **レイアウトを変えたら** build-card → render-pdf → gen-fixtures → build-fewshot を再実行し `npx vitest run` と eval-ocr で確認
+- **OCR v3**: サーバー（`server/card-ocr.ts` / `server/_core/card-image.ts`）で JPEG デコード → 四隅■＋向きキーで 0/90/180/270° 補正
+  → 面コードで OUT/IN 判定 → 全チェック枠を画素判定・数字枠のインク有無 → Gemini（全体＋行ごとの切り抜き＋記入済みお手本）→ 統合・検証。
+  精度評価は `npx tsx scripts/scorecard/eval-ocr.ts`（合成写真3枚で 275/275、要確認に出ない誤読 0）。v2 カードの読み取りは廃止
+- **データ**: putts に `missLength`（short/long）を追加 → `drizzle/0005_putts_miss_length.sql`（未適用）。
+  `putts.result` は「このパットが入れば何のスコアか」（1ホール1回の「何のパット？」から自動で埋める。`lib/putting.ts`）
+- **分析**: ストロークス・ゲインド中心に作り直し（`lib/putting-stats.ts`、設計は `docs/ANALYTICS.md`）
+- **3D**: `components/green/green-scene.web.tsx`（three.js・動的 import・画面外で停止・reduced-motion 対応）、ネイティブは SVG
+- **デモモード**: ログイン画面「ログインせずにデモを見る」。`lib/demo-mode.ts`（メモリ上のストア）＋ `lib/demo-data.ts`。
+  Supabase 停止中の画面確認にも使える（localStorage `putting_analyzer_demo_mode=1`）
 
 ## 次にやること
 
 1. Supabase Dashboard でプロジェクトを Restore する
-2. `drizzle.__drizzle_migrations` の履歴を確認し、0003・0004 を適用する
+2. `drizzle.__drizzle_migrations` の履歴を確認し、0003・0004・0005 を適用する
    - 履歴があれば `DATABASE_URL=... npx drizzle-kit migrate`
-   - 履歴が無ければ SQL Editor で 0003 → 0004 の順に手動実行
+   - 履歴が無ければ SQL Editor で 0003 → 0004 → 0005 の順に手動実行
    - 0004 は所有者ロール（postgres）で実行すること。適用後 `SELECT relrowsecurity FROM pg_class` で確認
 3. anon key で `https://<ref>.supabase.co/rest/v1/rounds?select=*` を叩いて 401/空になることを確認
 4. ログイン → ラウンド作成 → ホール入力 → 分析 が本番で動くことを確認
-5. 実際のカード写真で OCR を試し、「補正OK」バッジが出るか・要確認の件数が妥当かを確認する
-   （■未検出が続く場合は `lib/ocr-image-core.ts` の `findCornerMarkers` のサイズ/形状の閾値を調整）
+5. カード v3 を印刷（実寸 175×105mm になっているか定規で確認）し、実際に記入・撮影して OCR を試す
+   （■未検出が続く場合は `lib/ocr-image-core.ts` の `findCornerMarkers`、印の判定は `lib/scorecard/process.ts` の MARK_*/INK_* を調整）
 6. 問題がなければプッシュし、ドラフトPRを Ready にする
 
 ## 重要な注意
