@@ -10,9 +10,14 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as Linking from "expo-linking";
 import { supabase } from "@/lib/supabase";
+import { setDemoMode } from "@/lib/demo-mode";
 import { useColors } from "@/hooks/use-colors";
 import { ErrorBanner } from "@/components/ui/error-banner";
+import { shadowLg, shadowPrimary } from "@/lib/card-shadow";
+import { GreenScene } from "@/components/green/green-scene";
+import { STAGE } from "@/components/green/green-types";
 
 type Mode = "signin" | "signup";
 
@@ -65,10 +70,12 @@ export default function LoginScreen() {
     setLoading(true);
     setError(null);
     try {
+      // Web: 同一オリジンの /oauth/callback。ネイティブ: app.config.ts の scheme から生成
+      // （例: puttinganalyzer://oauth/callback）。文字列を直書きするとスキーム変更時にずれる。
       const redirectTo =
-        typeof window !== "undefined"
+        Platform.OS === "web" && typeof window !== "undefined"
           ? `${window.location.origin}/oauth/callback`
-          : "putting-analyzer-v2://oauth/callback";
+          : Linking.createURL("oauth/callback");
       const { error: err } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo },
@@ -91,31 +98,32 @@ export default function LoginScreen() {
           contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Logo / Title */}
-          <View style={{ alignItems: "center", marginBottom: 40 }}>
-            <Text style={{ fontSize: 40, marginBottom: 12 }}>⛳️</Text>
-            <Text
-              style={{ fontSize: 28, fontWeight: "bold", color: colors.tint, marginBottom: 4 }}
-            >
-              パッティング分析
-            </Text>
-            <Text style={{ fontSize: 14, color: colors.muted }}>
-              あなたのパッティングを記録・分析
-            </Text>
+          {/* ヒーロー: 3D グリーン */}
+          <View style={{ borderRadius: 26, overflow: "hidden", marginBottom: 20, maxWidth: 480, width: "100%", alignSelf: "center" }}>
+            <GreenScene mode="hero" height={230} radius={0} accessibilityLabel="グリーン上でボールがカップに入るアニメーション" />
+            <View pointerEvents="none" style={{ position: "absolute", left: 20, top: 18, right: 20 }}>
+              <Text style={{ fontSize: 28, fontWeight: "900", color: STAGE.text, letterSpacing: -0.4 }}>パッティング分析</Text>
+              <Text style={{ fontSize: 15, color: STAGE.textMuted, marginTop: 4, lineHeight: 21 }}>
+                カードに書いて撮るだけ。{"\n"}どこで何打失っているかが分かる
+              </Text>
+            </View>
           </View>
 
           {/* Card */}
           <View
-            style={{
-              backgroundColor: colors.surface,
-              borderRadius: 16,
-              padding: 24,
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.08,
-              shadowRadius: 8,
-              elevation: 3,
-            }}
+            style={[
+              {
+                backgroundColor: colors.surface,
+                borderRadius: 24,
+                padding: 24,
+                maxWidth: 480,
+                width: "100%",
+                alignSelf: "center",
+                borderWidth: 1,
+                borderColor: colors.border,
+              },
+              shadowLg,
+            ]}
           >
             {/* Mode toggle */}
             <View
@@ -142,7 +150,7 @@ export default function LoginScreen() {
                   <Text
                     style={{
                       fontWeight: "600",
-                      color: mode === m ? "#fff" : colors.muted,
+                      color: mode === m ? colors.onPrimary : colors.muted,
                     }}
                   >
                     {m === "signin" ? "ログイン" : "新規登録"}
@@ -221,19 +229,22 @@ export default function LoginScreen() {
             <TouchableOpacity
               onPress={handleSubmit}
               disabled={loading}
-              style={{
-                backgroundColor: colors.tint,
-                borderRadius: 12,
-                paddingVertical: 14,
-                alignItems: "center",
-                marginBottom: 16,
-                opacity: loading ? 0.7 : 1,
-              }}
+              style={[
+                {
+                  backgroundColor: colors.tint,
+                  borderRadius: 14,
+                  paddingVertical: 15,
+                  alignItems: "center",
+                  marginBottom: 16,
+                  opacity: loading ? 0.7 : 1,
+                },
+                shadowPrimary,
+              ]}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.onPrimary} />
               ) : (
-                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}>
+                <Text style={{ color: colors.onPrimary, fontWeight: "bold", fontSize: 16 }}>
                   {mode === "signin" ? "ログイン" : "アカウント作成"}
                 </Text>
               )}
@@ -265,9 +276,37 @@ export default function LoginScreen() {
                 opacity: loading ? 0.7 : 1,
               }}
             >
-              <Text style={{ fontSize: 18 }}>G</Text>
+              <View
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 11,
+                  backgroundColor: "#FFFFFF",
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: "700", color: "#4285F4" }}>G</Text>
+              </View>
               <Text style={{ color: colors.text, fontWeight: "600", fontSize: 15 }}>
                 Googleでログイン
+              </Text>
+            </TouchableOpacity>
+
+            {/* デモ */}
+            <TouchableOpacity
+              onPress={() => void setDemoMode(true)}
+              disabled={loading}
+              accessibilityRole="button"
+              style={{ paddingVertical: 14, alignItems: "center", marginTop: 8 }}
+            >
+              <Text style={{ color: colors.tint, fontWeight: "700", fontSize: 15 }}>
+                ログインせずにデモを見る
+              </Text>
+              <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>
+                サンプルの22ラウンドで分析を体験できます
               </Text>
             </TouchableOpacity>
           </View>

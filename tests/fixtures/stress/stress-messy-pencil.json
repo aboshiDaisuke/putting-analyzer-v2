@@ -1,0 +1,120 @@
+{
+  "side": "in",
+  "fill": {
+    "ink": "pencil",
+    "markStyle": "check",
+    "markStyles": {
+      "0.puttFor": "slash",
+      "2.p1.lr": "cross",
+      "4.p1.ud": "fill",
+      "5.puttFor": "circle"
+    },
+    "rows": [
+      {
+        "puttFor": 1,
+        "p1": {
+          "dist": "9",
+          "ud": 1,
+          "lr": 1,
+          "miss": 0
+        },
+        "p2": {
+          "dist": "1.5",
+          "ud": 1,
+          "lr": 0
+        },
+        "total": "2"
+      },
+      {
+        "puttFor": 2,
+        "p1": {
+          "dist": "5",
+          "ud": 0,
+          "lr": 2,
+          "miss": 1
+        },
+        "p2": {
+          "dist": "0.7",
+          "ud": 2,
+          "lr": 0
+        },
+        "total": "2"
+      },
+      {
+        "puttFor": 1,
+        "p1": {
+          "dist": "13",
+          "ud": 2,
+          "lr": 2,
+          "miss": 1
+        },
+        "p2": {
+          "dist": "1.1",
+          "ud": 0,
+          "lr": 1
+        },
+        "total": "2"
+      },
+      {
+        "puttFor": 2,
+        "p1": {
+          "dist": "1",
+          "ud": 1,
+          "lr": 0
+        },
+        "total": "1"
+      },
+      {
+        "puttFor": 3,
+        "p1": {
+          "dist": "7",
+          "ud": 2,
+          "lr": 1,
+          "miss": 0
+        },
+        "p2": {
+          "dist": "2.0",
+          "ud": 1,
+          "lr": 2
+        },
+        "p3": {
+          "dist": "0.5"
+        },
+        "total": "3"
+      },
+      {
+        "puttFor": 2,
+        "p1": {
+          "dist": "18",
+          "ud": 1,
+          "lr": 0,
+          "miss": 0
+        },
+        "p2": {
+          "dist": "1.4",
+          "ud": 0,
+          "lr": 0
+        },
+        "total": "2"
+      },
+      null,
+      null,
+      {
+        "puttFor": 1,
+        "p1": {
+          "dist": "10",
+          "ud": 0,
+          "lr": 2,
+          "miss": 1
+        },
+        "p2": {
+          "dist": "0.8",
+          "ud": 2,
+          "lr": 1
+        },
+        "total": "2"
+      }
+    ],
+    "messy": 11
+  }
+}

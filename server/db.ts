@@ -1,7 +1,8 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
+  Hole,
   InsertCourse,
   InsertHole,
   InsertPutt,
@@ -9,6 +10,7 @@ import {
   InsertRound,
   InsertUser,
   InsertUserProfile,
+  Putt,
   courses,
   holes,
   putts,
@@ -103,6 +105,17 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
   }
+}
+
+/** users.name を更新する（プロフィール画面の表示名）。 */
+export async function updateUserName(userId: number, name: string | null) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .update(users)
+    .set({ name, updatedAt: new Date() })
+    .where(eq(users.id, userId));
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -275,11 +288,93 @@ export async function deleteCourse(id: number, userId: number) {
 
 // ─── Rounds ───────────────────────────────────────────────────────────────────
 
+/**
+ * ラウンド一覧。ホールは含めず、代わりにパットが入力済みのホール数 `holesPlayed` を
+ * 付けて返す（一覧・ホームで「平均パット/H」を正しい分母で出すため）。
+ */
 export async function getRounds(userId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select().from(rounds).where(eq(rounds.userId, userId));
+  const holesPlayedSubquery = sql<number>`(
+    SELECT COUNT(*)::int FROM ${holes}
+    WHERE ${holes.roundId} = ${rounds.id} AND ${holes.totalPutts} > 0
+  )`;
+
+  return db
+    .select({
+      id: rounds.id,
+      userId: rounds.userId,
+      date: rounds.date,
+      courseId: rounds.courseId,
+      courseName: rounds.courseName,
+      frontNineGreen: rounds.frontNineGreen,
+      backNineGreen: rounds.backNineGreen,
+      weather: rounds.weather,
+      temperature: rounds.temperature,
+      windSpeed: rounds.windSpeed,
+      roundType: rounds.roundType,
+      competitionFormat: rounds.competitionFormat,
+      grassType: rounds.grassType,
+      stimpmeter: rounds.stimpmeter,
+      mowingHeight: rounds.mowingHeight,
+      compaction: rounds.compaction,
+      greenCondition: rounds.greenCondition,
+      putterId: rounds.putterId,
+      putterName: rounds.putterName,
+      totalPutts: rounds.totalPutts,
+      createdAt: rounds.createdAt,
+      updatedAt: rounds.updatedAt,
+      holesPlayed: holesPlayedSubquery,
+    })
+    .from(rounds)
+    .where(eq(rounds.userId, userId));
+}
+
+/**
+ * Returns all of a user's rounds with their holes and putts hydrated.
+ * Uses 3 batched queries (rounds, holes, putts) to avoid N+1. Intended for
+ * the analytics screen, where per-hole/per-putt data is required.
+ */
+export async function getRoundsWithHoles(userId: number, fromDate?: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const roundRows = await db
+    .select()
+    .from(rounds)
+    .where(
+      fromDate
+        ? and(eq(rounds.userId, userId), gte(rounds.date, fromDate))
+        : eq(rounds.userId, userId),
+    );
+  if (roundRows.length === 0) return [];
+
+  const roundIds = roundRows.map((r) => r.id);
+  const holeRows = await db.select().from(holes).where(inArray(holes.roundId, roundIds));
+
+  const holeIds = holeRows.map((h) => h.id);
+  const puttRows =
+    holeIds.length > 0
+      ? await db.select().from(putts).where(inArray(putts.holeId, holeIds))
+      : [];
+
+  const puttsByHole = new Map<number, typeof puttRows>();
+  for (const p of puttRows) {
+    const arr = puttsByHole.get(p.holeId);
+    if (arr) arr.push(p);
+    else puttsByHole.set(p.holeId, [p]);
+  }
+
+  const holesByRound = new Map<number, Array<(typeof holeRows)[number] & { putts: typeof puttRows }>>();
+  for (const h of holeRows) {
+    const withPutts = { ...h, putts: puttsByHole.get(h.id) ?? [] };
+    const arr = holesByRound.get(h.roundId);
+    if (arr) arr.push(withPutts);
+    else holesByRound.set(h.roundId, [withPutts]);
+  }
+
+  return roundRows.map((r) => ({ ...r, holes: holesByRound.get(r.id) ?? [] }));
 }
 
 export async function getRound(id: number, userId: number) {
@@ -340,39 +435,72 @@ export async function getHolesByRound(roundId: number) {
   return db.select().from(holes).where(eq(holes.roundId, roundId));
 }
 
-export async function upsertHole(
-  roundId: number,
-  holeNumber: number,
-  data: Partial<Omit<InsertHole, "id" | "roundId" | "holeNumber" | "createdAt" | "updatedAt">>,
-) {
+export type HoleSaveInput = {
+  holeNumber: number;
+  scoreResult: InsertHole["scoreResult"];
+  totalPutts: number;
+  putts: Omit<InsertPutt, "id" | "holeId" | "createdAt" | "updatedAt">[];
+};
+
+/**
+ * 複数ホール（とそのパット）を1トランザクションで保存し、ラウンドの totalPutts を
+ * DB上の全ホール合計から再計算する。
+ *  - ホールは (roundId, holeNumber) のユニーク制約で upsert（並行保存でも重複しない）
+ *  - パットは delete → insert で全置換
+ *  - 途中で失敗した場合は全てロールバックされる
+ */
+export async function saveHoles(roundId: number, holesInput: HoleSaveInput[]) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const values: InsertHole = { roundId, holeNumber, ...data };
-  const updateSet: Partial<InsertHole> & { updatedAt: Date } = {
-    ...data,
-    updatedAt: new Date(),
-  };
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const saved: Array<Hole & { putts: Putt[] }> = [];
 
-  // Drizzle doesn't support composite unique constraints with onConflictDoUpdate
-  // without explicit target columns, so we check-then-upsert manually.
-  const existing = await db
-    .select()
-    .from(holes)
-    .where(and(eq(holes.roundId, roundId), eq(holes.holeNumber, holeNumber)))
-    .limit(1);
+    for (const holeInput of holesInput) {
+      const [hole] = await tx
+        .insert(holes)
+        .values({
+          roundId,
+          holeNumber: holeInput.holeNumber,
+          scoreResult: holeInput.scoreResult,
+          totalPutts: holeInput.totalPutts,
+        })
+        .onConflictDoUpdate({
+          target: [holes.roundId, holes.holeNumber],
+          set: {
+            scoreResult: holeInput.scoreResult,
+            totalPutts: holeInput.totalPutts,
+            updatedAt: now,
+          },
+        })
+        .returning();
 
-  if (existing.length > 0) {
-    const updated = await db
-      .update(holes)
-      .set(updateSet)
-      .where(eq(holes.id, existing[0].id))
-      .returning();
-    return updated[0];
-  }
+      await tx.delete(putts).where(eq(putts.holeId, hole.id));
+      const savedPutts =
+        holeInput.putts.length > 0
+          ? await tx
+              .insert(putts)
+              .values(holeInput.putts.map((p) => ({ holeId: hole.id, ...p })))
+              .returning()
+          : [];
 
-  const inserted = await db.insert(holes).values(values).returning();
-  return inserted[0];
+      saved.push({ ...hole, putts: savedPutts });
+    }
+
+    // ラウンド合計はクライアントの値を信用せず、DB上の全ホールから再計算する
+    const [{ total }] = await tx
+      .select({ total: sql<number>`COALESCE(SUM(${holes.totalPutts}), 0)::int` })
+      .from(holes)
+      .where(eq(holes.roundId, roundId));
+
+    await tx
+      .update(rounds)
+      .set({ totalPutts: total, updatedAt: now })
+      .where(eq(rounds.id, roundId));
+
+    return { holes: saved, totalPutts: total };
+  });
 }
 
 // ─── Putts ────────────────────────────────────────────────────────────────────
@@ -397,14 +525,16 @@ export async function deleteHolesByRound(roundId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // Delete holes — putts cascade automatically via FK onDelete: "cascade"
-  await db.delete(holes).where(eq(holes.roundId, roundId));
+  await db.transaction(async (tx) => {
+    // Delete holes — putts cascade automatically via FK onDelete: "cascade"
+    await tx.delete(holes).where(eq(holes.roundId, roundId));
 
-  // Reset totalPutts on the round
-  await db
-    .update(rounds)
-    .set({ totalPutts: 0, updatedAt: new Date() })
-    .where(eq(rounds.id, roundId));
+    // Reset totalPutts on the round
+    await tx
+      .update(rounds)
+      .set({ totalPutts: 0, updatedAt: new Date() })
+      .where(eq(rounds.id, roundId));
+  });
 }
 
 /** Delete all rounds for a user — holes and putts cascade automatically. */
@@ -413,23 +543,4 @@ export async function deleteAllRounds(userId: number) {
   if (!db) throw new Error("Database not available");
 
   await db.delete(rounds).where(eq(rounds.userId, userId));
-}
-
-/**
- * Replace all putts for a hole with the provided array.
- * Deletes existing rows, then inserts fresh ones — keeping it simple and correct.
- */
-export async function upsertPutts(
-  holeId: number,
-  puttsData: Omit<InsertPutt, "id" | "holeId" | "createdAt" | "updatedAt">[],
-) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  await db.delete(putts).where(eq(putts.holeId, holeId));
-
-  if (puttsData.length === 0) return [];
-
-  const rows: InsertPutt[] = puttsData.map((p) => ({ holeId, ...p }));
-  return db.insert(putts).values(rows).returning();
 }

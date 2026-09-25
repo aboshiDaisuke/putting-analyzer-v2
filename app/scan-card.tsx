@@ -1,695 +1,355 @@
-import { useState, useRef } from "react";
-import {
-  Text,
-  View,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-  Platform,
-  ScrollView,
-  Image,
-  useWindowDimensions,
-} from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
+/**
+ * パッティングカード v3 の撮影。表（OUT 1〜9番）と裏（IN 10〜18番）の2枚。
+ *
+ * - 撮影/選択した直後に前処理（Web: 四隅■検出・向き補正・台形補正・面の判定）をして状態を表示
+ * - 面を取り違えて撮っても、判定できた面に自動で入れ替える
+ * - 読み取りはサーバー（Gemini + 画素判定）。結果は確認画面へ
+ */
+import { useRef, useState } from "react";
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import * as ImageManipulator from "expo-image-manipulator";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { ErrorBanner } from "@/components/ui/error-banner";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { shadowPrimary, shadowSm } from "@/lib/card-shadow";
+import { hapticLight } from "@/lib/haptics";
+import { prepareScorecardImage, type PreparedImage } from "@/lib/ocr-image";
+import { setOcrSession, type SideResult } from "@/lib/ocr-session";
+import { useIsDemo } from "@/lib/session-context";
+import type { CardSide } from "@/lib/scorecard/layout";
 import { trpc } from "@/lib/trpc";
 
-type ScanStep = "capture" | "preview" | "analyzing" | "done";
+type Shot = { uri: string; base64: string; prepared?: PreparedImage };
 
-interface CapturedImage {
-  uri: string;
-  base64: string;
-}
+const SIDE_INFO: Record<CardSide, { title: string; sub: string }> = {
+  out: { title: "表 OUT", sub: "1〜9番" },
+  in: { title: "裏 IN", sub: "10〜18番" },
+};
 
-// Vercel Serverless Functions の本文上限は 4.5MB。
-// iPhoneのJPEG(quality 0.92, 2560px幅)は3〜6MB、base64で+33%になるため注意。
-// → アップロード前に最大2560px幅・quality 0.92 に圧縮。
-// 2560px: 手書き数字・塗りつぶし○の細部を高解像度で保持（1920→2560でOCR精度向上）
-// 圧縮失敗時は元のbase64にフォールバック。
-async function compressForUpload(uri: string, fallbackBase64: string): Promise<string> {
-  try {
-    const result = await ImageManipulator.manipulateAsync(
-      uri,
-      [{ resize: { width: 2560 } }],
-      {
-        compress: 0.92, // OCR精度向上: JPEGアーティファクト削減で手書き数字・塗りつぶし○の細部を保持
-        format: ImageManipulator.SaveFormat.JPEG,
-        base64: true,
-      }
-    );
-    return result.base64!;
-  } catch (e) {
-    console.warn("Image compression failed, using original:", e);
-    return fallbackBase64;
-  }
-}
+const CARD_ASPECT = 175 / 105;
 
 export default function ScanCardScreen() {
   const router = useRouter();
   const { roundId } = useLocalSearchParams<{ roundId?: string }>();
   const colors = useColors();
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const isDemo = useIsDemo();
+  const { width: screenW } = useWindowDimensions();
+  const contentW = Math.min(screenW, 720) - 32;
+
   const [permission, requestPermission] = useCameraPermissions();
-  const [step, setStep] = useState<ScanStep>("capture");
-  const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [analysisProgress, setAnalysisProgress] = useState(0);
-  const [analysisResults, setAnalysisResults] = useState<any[]>([]);
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [shots, setShots] = useState<Record<CardSide, Shot | null>>({ out: null, in: null });
+  const [cameraFor, setCameraFor] = useState<CardSide | null>(null);
+  const [torch, setTorch] = useState(false);
+  const [analyzing, setAnalyzing] = useState<{ done: number; total: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
-  // タップフォーカスリング（UIフィードバック用のみ。expo-camera@17にfocusPoint propはない）
-  const [focusRing, setFocusRing] = useState<{ x: number; y: number } | null>(null);
-  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // ライト（トーチ）
-  const [torchEnabled, setTorchEnabled] = useState(false);
+  // 読み取り済みの結果（写真ごと）。片面だけ撮り直したとき、もう片面を読み直さない
+  const doneRef = useRef(new Map<string, SideResult>());
+  const analyze = trpc.ocr.analyzeCard.useMutation();
 
-  const handleTapToFocus = (pageX: number, pageY: number) => {
-    // expo-camera@17 では focusPoint prop が存在しないため、
-    // UIのフォーカスリング表示のみ（カメラは autofocus="on" に依存）
-    setFocusRing({ x: pageX, y: pageY });
-    if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
-    focusTimerRef.current = setTimeout(() => {
-      setFocusRing(null);
-    }, 2500);
-  };
-
-  const analyzeMutation = trpc.ocr.analyzeScorecard.useMutation();
-
-  const handleCapture = async () => {
-    if (!cameraRef.current) return;
-
-    try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 1.0,
-        base64: true,
+  /** 画像を面に入れ、前処理して、判定した面が違えば入れ替える */
+  const addShot = (side: CardSide, shot: Shot) => {
+    setShots((prev) => ({ ...prev, [side]: shot }));
+    setError(null);
+    void prepareScorecardImage(shot.uri, shot.base64).then((prepared) => {
+      setShots((prev) => {
+        const current = prev[side];
+        if (!current || current.uri !== shot.uri) return prev;
+        const updated = { ...current, prepared };
+        const detected = prepared.side;
+        if (detected && detected !== side) {
+          setNotice(`${SIDE_INFO[detected].title} の面だったので入れ替えました`);
+          return { ...prev, [side]: prev[detected], [detected]: updated };
+        }
+        return { ...prev, [side]: updated };
       });
-
-      if (photo && photo.base64) {
-        const newImage: CapturedImage = {
-          uri: photo.uri,
-          base64: photo.base64,
-        };
-        setCapturedImages((prev) => [...prev, newImage]);
-        setCurrentImageIndex(capturedImages.length);
-        setStep("preview");
-      }
-    } catch (error) {
-      Alert.alert("エラー", "写真の撮影に失敗しました");
-    }
-  };
-
-  const handlePickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 1.0,
-      base64: true,
-      allowsMultipleSelection: true,
     });
+  };
 
-    if (!result.canceled && result.assets.length > 0) {
-      const newImages: CapturedImage[] = [];
-
-      for (const asset of result.assets) {
-        let base64 = asset.base64;
-        if (!base64) {
-          // base64がない場合はファイルから読み込む
-          try {
-            const fileContent = await FileSystem.readAsStringAsync(asset.uri, {
-              encoding: FileSystem.EncodingType.Base64,
-            });
-            base64 = fileContent;
-          } catch {
-            continue;
-          }
-        }
-        if (base64) {
-          newImages.push({ uri: asset.uri, base64 });
-        }
+  const capture = async () => {
+    if (!cameraRef.current || !cameraFor) return;
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.95, base64: true });
+      if (photo?.base64) {
+        hapticLight();
+        addShot(cameraFor, { uri: photo.uri, base64: photo.base64 });
+        // 表を撮ったら続けて裏へ
+        if (cameraFor === "out" && !shots.in) setCameraFor("in");
+        else setCameraFor(null);
       }
-
-      if (newImages.length > 0) {
-        setCapturedImages((prev) => [...prev, ...newImages]);
-        setCurrentImageIndex(capturedImages.length);
-        setStep("preview");
-      }
+    } catch {
+      setError("撮影に失敗しました。もう一度お試しください。");
     }
   };
 
-  const handleRemoveImage = (index: number) => {
-    setCapturedImages((prev) => prev.filter((_, i) => i !== index));
-    if (currentImageIndex >= capturedImages.length - 1) {
-      setCurrentImageIndex(Math.max(0, capturedImages.length - 2));
-    }
-    if (capturedImages.length <= 1) {
-      setStep("capture");
-    }
-  };
-
-  const handleAddMore = () => {
-    setStep("capture");
-  };
-
-  const handleAnalyze = async () => {
-    if (capturedImages.length === 0) return;
-
-    setStep("analyzing");
-    setAnalysisProgress(0);
-    setAnalysisError(null);
-    const results: any[] = [];
-
-    for (let i = 0; i < capturedImages.length; i++) {
+  const pick = async (side: CardSide) => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1, base64: true, allowsMultipleSelection: false });
+    if (result.canceled || result.assets.length === 0) return;
+    const asset = result.assets[0];
+    let base64 = asset.base64 ?? null;
+    if (!base64 && Platform.OS !== "web") {
       try {
-        setAnalysisProgress((i / capturedImages.length) * 100);
-
-        // 1. 画像を圧縮（Vercel 4.5MB 上限対策: 2560px幅・quality 0.92）
-        const compressedBase64 = await compressForUpload(capturedImages[i].uri, capturedImages[i].base64);
-
-        // 2. base64を直接Geminiへ送信（Supabase経由不要 → ラウンドトリップ削減で高速化）
-        const analyzeResult = await analyzeMutation.mutateAsync({
-          base64: compressedBase64,
-          mimeType: "image/jpeg",
-        });
-
-        if (analyzeResult.success && analyzeResult.data) {
-          results.push(analyzeResult.data);
-        } else {
-          results.push({ error: true, index: i + 1 });
-        }
-      } catch (error) {
-        const errMsg = error instanceof Error ? error.message : String(error);
-        console.error(`Image ${i + 1} analysis failed:`, error);
-        results.push({ error: true, index: i + 1, message: errMsg });
+        base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+      } catch {
+        base64 = null;
       }
     }
-
-    setAnalysisProgress(100);
-    setAnalysisResults(results);
-    setStep("done");
-
-    // 結果画面に遷移
-    const validResults = results.filter((r) => !r.error);
-    if (validResults.length > 0) {
-      // OCR結果をパラメータとして渡す（roundIdがあれば一緒に渡す）
-      router.push({
-        pathname: "/ocr-review" as any,
-        params: {
-          data: JSON.stringify(validResults),
-          ...(roundId ? { roundId } : {}),
-        },
-      });
-    } else {
-      // Alert.alert はWebで正常動作しないためインライン表示に切り替え
-      const errDetails = results
-        .filter((r) => r.error && r.message)
-        .map((r) => r.message)
-        .join("\n");
-      setAnalysisError(
-        "スコアカードの読み取りに失敗しました。\n" +
-        "明るい場所で撮影し、四隅の■マークが写るようにしてください。" +
-        (errDetails ? `\n\n[詳細] ${errDetails}` : "")
-      );
-      setStep("preview");
+    if (!base64 && asset.uri.startsWith("data:")) base64 = asset.uri.split(",")[1] ?? null;
+    if (!base64) {
+      setError("画像を読み込めませんでした");
+      return;
     }
+    addShot(side, { uri: asset.uri, base64 });
   };
 
-  const resetScan = () => {
-    setCapturedImages([]);
-    setCurrentImageIndex(0);
-    setAnalysisProgress(0);
-    setAnalysisResults([]);
-    setAnalysisError(null);
-    setStep("capture");
+  const start = async () => {
+    const entries = (Object.entries(shots) as [CardSide, Shot | null][]).filter((e): e is [CardSide, Shot] => e[1] !== null);
+    if (entries.length === 0) return;
+    setError(null);
+    setAnalyzing({ done: 0, total: entries.length });
+    const results: SideResult[] = [];
+    const failures: string[] = [];
+    await Promise.all(
+      entries.map(async ([side, shot]) => {
+        const cached = doneRef.current.get(shot.uri);
+        if (cached) {
+          results.push(cached);
+          setAnalyzing((a) => (a ? { ...a, done: a.done + 1 } : a));
+          return;
+        }
+        try {
+          const prepared = shot.prepared ?? (await prepareScorecardImage(shot.uri, shot.base64));
+          const res = await analyze.mutateAsync({ base64: prepared.base64, mimeType: prepared.mimeType, sideHint: side });
+          if (res.success && res.card) {
+            const r: SideResult = {
+              side: res.side ?? side,
+              card: res.card,
+              conflicts: res.conflicts,
+              warnings: res.warnings,
+              preview: res.preview ?? prepared.base64,
+              rectified: res.meta.rectified,
+              blurry: res.meta.blurry,
+            };
+            doneRef.current.set(shot.uri, r);
+            results.push(r);
+          } else if (res.reason === "markers_not_found") {
+            failures.push(`${SIDE_INFO[side].title}: 四隅の■が4つとも写っていません。カード全体が入るように撮り直してください`);
+          } else {
+            failures.push(`${SIDE_INFO[side].title}: 読み取れませんでした。明るい場所で撮り直してください`);
+          }
+        } catch (e) {
+          failures.push(`${SIDE_INFO[side].title}: ${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+          setAnalyzing((a) => (a ? { ...a, done: a.done + 1 } : a));
+        }
+      }),
+    );
+    setAnalyzing(null);
+    if (failures.length > 0) {
+      // 片面でも読めなかったら、読めた面だけで先へ進めずに撮り直してもらう（半端な保存を防ぐ）
+      setError(failures.join("\n"));
+      return;
+    }
+    // 同じ面が2つになったら撮影した枠の面を信じる
+    if (results.length === 2 && results[0].side === results[1].side) {
+      results[0].side = entries[0][0];
+      results[1].side = entries[1][0];
+    }
+    results.sort((a, b) => (a.side === "out" ? -1 : 1) - (b.side === "out" ? -1 : 1));
+    setOcrSession({ roundId, results });
+    router.push("/ocr-review" as never);
   };
 
-  // 解析中画面
-  if (step === "analyzing") {
+  // ─── 解析中 ───
+  if (analyzing) {
     return (
-      <ScreenContainer edges={["top", "left", "right", "bottom"]}>
-        <View className="flex-1 items-center justify-center p-6">
-          <View className="bg-surface rounded-3xl p-8 items-center w-full max-w-sm border border-border">
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text className="text-foreground text-xl font-bold mt-6">
-              読み取り中...
-            </Text>
-            <Text className="text-muted text-center mt-2">
-              AI がスコアカードを解析しています
-            </Text>
-
-            {/* プログレスバー */}
-            <View className="w-full mt-6">
-              <View className="bg-border rounded-full h-3 overflow-hidden">
-                <View
-                  style={{
-                    width: `${Math.round(analysisProgress)}%`,
-                    backgroundColor: colors.primary,
-                    height: "100%",
-                    borderRadius: 999,
-                  }}
-                />
-              </View>
-              <Text className="text-muted text-sm text-center mt-2">
-                {Math.round(analysisProgress)}% 完了
-              </Text>
-            </View>
-
-            <Text className="text-muted text-xs text-center mt-4">
-              {capturedImages.length}枚のカードを処理中
-            </Text>
-          </View>
-        </View>
-      </ScreenContainer>
-    );
-  }
-
-  // プレビュー画面
-  if (step === "preview" && capturedImages.length > 0) {
-    return (
-      <ScreenContainer edges={["top", "left", "right", "bottom"]}>
-        {/* ヘッダー */}
-        <View className="flex-row items-center justify-between p-4 border-b border-border">
-          <TouchableOpacity onPress={() => resetScan()} className="p-2 -ml-2">
-            <IconSymbol name="arrow.left" size={24} color={colors.foreground} />
-          </TouchableOpacity>
-          <Text className="text-lg font-bold text-foreground">
-            撮影確認
+      <ScreenContainer className="items-center justify-center p-6">
+        <View style={[{ backgroundColor: colors.surface, borderRadius: 24, padding: 28, alignItems: "center", width: "100%", maxWidth: 380 }, shadowSm]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ color: colors.foreground, fontSize: 20, fontWeight: "900", marginTop: 18 }}>読み取り中…</Text>
+          <Text style={{ color: colors.muted, fontSize: 15, textAlign: "center", marginTop: 8, lineHeight: 22 }}>
+            向きと傾きを補正し、チェック欄は画像から直接判定、数字は AI が2回読んで照合しています
           </Text>
-          <View style={{ width: 40 }} />
-        </View>
-
-        <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
-          <View className="gap-4">
-            {/* エラー表示 */}
-            {analysisError && (
-              <ErrorBanner title="読み取りエラー" message={analysisError} />
-            )}
-
-            {/* 撮影枚数表示 */}
-            <View className="bg-surface rounded-2xl p-4 border border-border">
-              <Text className="text-foreground font-semibold text-base mb-1">
-                撮影済みカード: {capturedImages.length}枚
-              </Text>
-              <Text className="text-muted text-sm">
-                1ホールにつき1枚のカードを撮影してください。{"\n"}
-                18ホール分まとめて解析できます。
-              </Text>
-            </View>
-
-            {/* 画像サムネイル一覧 */}
-            <View className="flex-row flex-wrap gap-3">
-              {capturedImages.map((img, index) => (
-                <View key={index} className="relative">
-                  <Image
-                    source={{ uri: img.uri }}
-                    style={{
-                      width: 100,
-                      height: 140,
-                      borderRadius: 12,
-                      borderWidth: 2,
-                      borderColor:
-                        index === currentImageIndex
-                          ? colors.primary
-                          : colors.border,
-                    }}
-                  />
-                  <TouchableOpacity
-                    onPress={() => handleRemoveImage(index)}
-                    style={{
-                      position: "absolute",
-                      top: -8,
-                      right: -8,
-                      backgroundColor: colors.error,
-                      borderRadius: 12,
-                      width: 24,
-                      height: 24,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Text style={{ color: "#FFF", fontSize: 14, fontWeight: "bold" }}>
-                      ×
-                    </Text>
-                  </TouchableOpacity>
-                  <View
-                    style={{
-                      position: "absolute",
-                      bottom: 4,
-                      left: 4,
-                      backgroundColor: "rgba(0,0,0,0.6)",
-                      borderRadius: 8,
-                      paddingHorizontal: 6,
-                      paddingVertical: 2,
-                    }}
-                  >
-                    <Text style={{ color: "#FFF", fontSize: 11, fontWeight: "600" }}>
-                      #{index + 1}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-
-              {/* 追加ボタン */}
-              <TouchableOpacity
-                onPress={handleAddMore}
-                style={{
-                  width: 100,
-                  height: 140,
-                  borderRadius: 12,
-                  borderWidth: 2,
-                  borderColor: colors.border,
-                  borderStyle: "dashed",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: colors.surface,
-                }}
-              >
-                <IconSymbol name="plus" size={28} color={colors.muted} />
-                <Text
-                  style={{
-                    color: colors.muted,
-                    fontSize: 11,
-                    marginTop: 4,
-                  }}
-                >
-                  追加撮影
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* 注意事項 */}
-            <View className="bg-warning/10 rounded-2xl p-4 border border-warning/30">
-              <Text className="text-foreground font-semibold text-sm mb-2">
-                読み取りのコツ
-              </Text>
-              <Text className="text-muted text-sm leading-relaxed">
-                ・四隅の■マークが写るように撮影{"\n"}
-                ・明るい場所で影が入らないように{"\n"}
-                ・カードが平らになるように置く{"\n"}
-                ・数字は枠内に丁寧に記入
-              </Text>
-            </View>
-          </View>
-        </ScrollView>
-
-        {/* 解析ボタン */}
-        <View className="p-4 border-t border-border">
-          <TouchableOpacity
-            onPress={handleAnalyze}
-            className="bg-primary rounded-2xl py-4 items-center"
-            activeOpacity={0.8}
-          >
-            <Text className="text-white font-bold text-lg">
-              {capturedImages.length}枚を読み取る
-            </Text>
-          </TouchableOpacity>
+          <Text style={{ color: colors.foreground, fontSize: 16, fontWeight: "800", marginTop: 16 }}>{`${analyzing.done} / ${analyzing.total} 面`}</Text>
         </View>
       </ScreenContainer>
     );
   }
 
-  // カメラ許可なし
-  if (!permission) {
+  // ─── カメラ ───
+  if (cameraFor) {
+    if (!permission?.granted) {
+      return (
+        <ScreenContainer className="p-6 items-center justify-center">
+          <IconSymbol name="camera.fill" size={48} color={colors.muted} />
+          <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "900", marginTop: 12 }}>カメラの許可が必要です</Text>
+          <Pressable onPress={requestPermission} style={{ marginTop: 16, backgroundColor: colors.primary, borderRadius: 14, minHeight: 48, paddingHorizontal: 20, justifyContent: "center" }}>
+            <Text style={{ color: colors.onPrimary, fontSize: 16, fontWeight: "800" }}>カメラを許可</Text>
+          </Pressable>
+          <Pressable onPress={() => setCameraFor(null)} style={{ marginTop: 10, minHeight: 44, justifyContent: "center" }}>
+            <Text style={{ color: colors.primary, fontSize: 16, fontWeight: "700" }}>戻る</Text>
+          </Pressable>
+        </ScreenContainer>
+      );
+    }
+    const frameW = screenW * 0.92;
+    const frameH = frameW / CARD_ASPECT;
+    const DARK = "rgba(0,0,0,0.55)";
     return (
-      <ScreenContainer className="items-center justify-center">
-        <ActivityIndicator size="large" color={colors.primary} />
-      </ScreenContainer>
-    );
-  }
-
-  if (!permission.granted) {
-    return (
-      <ScreenContainer edges={["top", "left", "right", "bottom"]}>
-        <View className="flex-row items-center justify-between p-4">
-          <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
-            <IconSymbol name="arrow.left" size={24} color={colors.foreground} />
-          </TouchableOpacity>
-          <Text className="text-lg font-semibold text-foreground">
-            カード撮影
-          </Text>
-          <View style={{ width: 24 }} />
-        </View>
-
-        <View className="flex-1 items-center justify-center p-6">
-          <View className="bg-surface rounded-3xl p-8 items-center border border-border">
-            <IconSymbol name="camera.fill" size={64} color={colors.muted} />
-            <Text className="text-foreground text-xl font-bold mt-4 text-center">
-              カメラへのアクセスが必要です
-            </Text>
-            <Text className="text-muted text-center mt-2">
-              スコアカードを撮影するには{"\n"}カメラへのアクセスを許可してください
-            </Text>
-            <TouchableOpacity
-              className="bg-primary px-8 py-3 rounded-xl mt-6"
-              onPress={requestPermission}
-              activeOpacity={0.8}
-            >
-              <Text className="text-white font-semibold">カメラを許可</Text>
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            className="mt-6 bg-surface rounded-2xl px-6 py-4 border border-border flex-row items-center gap-3"
-            onPress={handlePickImage}
-            activeOpacity={0.7}
-          >
-            <IconSymbol name="list.bullet" size={24} color={colors.primary} />
-            <Text className="text-primary font-medium">
-              ライブラリから選択
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ScreenContainer>
-    );
-  }
-
-  // カメラ撮影画面
-  // ガイドフレームサイズ計算（スクリーン幅の88%、縦横比0.7のカード）
-  const GUIDE_SCALE = 0.88;
-  const CARD_ASPECT = 0.7; // width / height
-  const frameWidth = screenWidth * GUIDE_SCALE;
-  const frameHeight = frameWidth / CARD_ASPECT;
-  const sidePad = (screenWidth - frameWidth) / 2;
-  const DARK = "rgba(0,0,0,0.58)";
-
-  return (
-    <View style={{ flex: 1, backgroundColor: "#000" }}>
-      <CameraView
-        ref={cameraRef}
-        style={{ flex: 1 }}
-        facing="back"
-        autofocus="on"
-        enableTorch={torchEnabled}
-      >
-        <View style={{ flex: 1 }}>
-          {/* ヘッダー */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: 16,
-              paddingTop: Platform.OS === "ios" ? 60 : 40,
-              backgroundColor: "rgba(0,0,0,0.4)",
-            }}
-          >
-            <TouchableOpacity
-              onPress={() =>
-                capturedImages.length > 0 ? setStep("preview") : router.back()
-              }
-              style={{ padding: 8 }}
-            >
-              <IconSymbol name="arrow.left" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-            <Text style={{ color: "#FFFFFF", fontSize: 18, fontWeight: "700" }}>
-              スコアカード撮影
-            </Text>
-            <View style={{ width: 40 }}>
-              {capturedImages.length > 0 && (
-                <View
-                  style={{
-                    backgroundColor: colors.primary,
-                    borderRadius: 12,
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    alignItems: "center",
-                  }}
-                >
-                  <Text style={{ color: "#FFF", fontSize: 13, fontWeight: "700" }}>
-                    {capturedImages.length}枚
-                  </Text>
-                </View>
-              )}
+      <View style={{ flex: 1, backgroundColor: "#000" }}>
+        <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back" autofocus="on" enableTorch={torch}>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, paddingTop: Platform.OS === "ios" ? 56 : 24, backgroundColor: DARK }}>
+              <Pressable onPress={() => setCameraFor(null)} accessibilityLabel="戻る" style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+                <IconSymbol name="arrow.left" size={24} color="#FFFFFF" />
+              </Pressable>
+              <Text style={{ color: "#FFFFFF", fontSize: 18, fontWeight: "900" }}>{`${SIDE_INFO[cameraFor].title}（${SIDE_INFO[cameraFor].sub}）`}</Text>
+              <Pressable onPress={() => setTorch((t) => !t)} accessibilityLabel="ライト" style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+                <IconSymbol name={torch ? "bolt.fill" : "bolt.slash.fill"} size={22} color={torch ? "#FFD54F" : "#FFFFFF"} />
+              </Pressable>
             </View>
-          </View>
-
-          {/* ガイドオーバーレイ: フレーム外を暗くして撮影範囲を明確化。タップでピント合わせ */}
-          <View
-            style={{ flex: 1 }}
-            onTouchEnd={(e) =>
-              handleTapToFocus(e.nativeEvent.pageX, e.nativeEvent.pageY)
-            }
-          >
-            {/* 上部 暗いエリア */}
             <View style={{ flex: 1, backgroundColor: DARK }} />
-
-            {/* 中段: 左暗い | ガイドフレーム（透明・白枠） | 右暗い */}
-            <View style={{ flexDirection: "row", height: frameHeight }}>
-              {/* 左暗いエリア */}
-              <View style={{ width: sidePad, backgroundColor: DARK }} />
-
-              {/* ガイドフレーム本体（カメラが透けて見える） */}
-              <View style={{ flex: 1, borderWidth: 2, borderColor: "rgba(255,255,255,0.85)" }}>
-                {/* 左上コーナー */}
-                <View style={{ position: "absolute", top: -1, left: -1, width: 32, height: 32, borderTopWidth: 4, borderLeftWidth: 4, borderColor: "#FFF" }} />
-                {/* 右上コーナー */}
-                <View style={{ position: "absolute", top: -1, right: -1, width: 32, height: 32, borderTopWidth: 4, borderRightWidth: 4, borderColor: "#FFF" }} />
-                {/* 左下コーナー */}
-                <View style={{ position: "absolute", bottom: -1, left: -1, width: 32, height: 32, borderBottomWidth: 4, borderLeftWidth: 4, borderColor: "#FFF" }} />
-                {/* 右下コーナー */}
-                <View style={{ position: "absolute", bottom: -1, right: -1, width: 32, height: 32, borderBottomWidth: 4, borderRightWidth: 4, borderColor: "#FFF" }} />
+            <View style={{ flexDirection: "row", height: frameH }}>
+              <View style={{ flex: 1, backgroundColor: DARK }} />
+              <View style={{ width: frameW, borderWidth: 2, borderColor: "rgba(255,255,255,0.9)", borderRadius: 6 }}>
+                {[
+                  { top: "4%", left: "2.5%" },
+                  { top: "4%", right: "2.5%" },
+                  { bottom: "4%", left: "2.5%" },
+                  { bottom: "4%", right: "2.5%" },
+                ].map((pos, i) => (
+                  <View key={i} pointerEvents="none" style={{ position: "absolute", width: 16, height: 16, borderWidth: 2, borderColor: "#FFD54F", ...(pos as object) }} />
+                ))}
               </View>
-
-              {/* 右暗いエリア */}
-              <View style={{ width: sidePad, backgroundColor: DARK }} />
+              <View style={{ flex: 1, backgroundColor: DARK }} />
             </View>
-
-            {/* 下部 暗いエリア + 説明テキスト */}
-            <View style={{ flex: 1, backgroundColor: DARK, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }}>
-              <Text style={{ color: "#FFFFFF", textAlign: "center", fontSize: 14, fontWeight: "500", lineHeight: 22 }}>
-                カード全体が枠内に収まるように{"\n"}位置を合わせてシャッターを押してください
-              </Text>
-              <Text style={{ color: "rgba(255,255,255,0.55)", textAlign: "center", fontSize: 12, marginTop: 6 }}>
-                ぼやける場合は画面をタップしてピントを合わせてください
+            <View style={{ flex: 1, backgroundColor: DARK, alignItems: "center", justifyContent: "center", padding: 20 }}>
+              <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "700", textAlign: "center", lineHeight: 24 }}>
+                カードを横向きに置き、四隅の■を黄色い枠に合わせて{"\n"}真上から撮影してください
               </Text>
             </View>
-
-            {/* ライト（トーチ）ON/OFFボタン — ガイドフレーム右上に固定 */}
-            <TouchableOpacity
-              onPress={() => setTorchEnabled((t) => !t)}
-              style={{
-                position: "absolute",
-                top: 12,
-                right: 12,
-                width: 44,
-                height: 44,
-                borderRadius: 22,
-                backgroundColor: torchEnabled
-                  ? "rgba(255,215,0,0.25)"
-                  : "rgba(0,0,0,0.45)",
-                borderWidth: 1,
-                borderColor: torchEnabled
-                  ? "#FFD700"
-                  : "rgba(255,255,255,0.4)",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <IconSymbol
-                name={torchEnabled ? "bolt.fill" : "bolt.slash.fill"}
-                size={20}
-                color={torchEnabled ? "#FFD700" : "#FFFFFF"}
-              />
-            </TouchableOpacity>
-
-            {/* タップフォーカスリング（タップ位置に2秒表示） */}
-            {focusRing && (
-              <View
-                pointerEvents="none"
-                style={{
-                  position: "absolute",
-                  left: focusRing.x - 32,
-                  top: focusRing.y - 32,
-                  width: 64,
-                  height: 64,
-                  borderRadius: 6,
-                  borderWidth: 2,
-                  borderColor: "#FFD700",
-                }}
-              />
-            )}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-around", padding: 20, paddingBottom: Platform.OS === "ios" ? 44 : 24, backgroundColor: DARK }}>
+              <Pressable onPress={() => void pick(cameraFor).then(() => setCameraFor(null))} accessibilityLabel="写真から選ぶ" style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" }}>
+                <IconSymbol name="photo.on.rectangle" size={24} color="#FFFFFF" />
+              </Pressable>
+              <Pressable onPress={() => void capture()} accessibilityLabel="撮影" style={{ width: 78, height: 78, borderRadius: 39, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" }}>
+                <View style={{ width: 62, height: 62, borderRadius: 31, backgroundColor: colors.primary }} />
+              </Pressable>
+              <View style={{ width: 52 }} />
+            </View>
           </View>
+        </CameraView>
+      </View>
+    );
+  }
 
-          {/* コントロール */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-around",
-              padding: 24,
-              paddingBottom: Platform.OS === "ios" ? 48 : 24,
-              backgroundColor: "rgba(0,0,0,0.4)",
-            }}
-          >
-            {/* ライブラリから選択 */}
-            <TouchableOpacity
-              onPress={handlePickImage}
-              style={{
-                width: 50,
-                height: 50,
-                borderRadius: 25,
-                backgroundColor: "rgba(255,255,255,0.2)",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <IconSymbol name="list.bullet" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-
-            {/* シャッターボタン */}
-            <TouchableOpacity
-              onPress={handleCapture}
-              style={{
-                width: 76,
-                height: 76,
-                borderRadius: 38,
-                backgroundColor: "#FFFFFF",
-                alignItems: "center",
-                justifyContent: "center",
-                borderWidth: 4,
-                borderColor: "rgba(255,255,255,0.5)",
-              }}
-            >
-              <View
-                style={{
-                  width: 60,
-                  height: 60,
-                  borderRadius: 30,
-                  backgroundColor: colors.primary,
-                }}
-              />
-            </TouchableOpacity>
-
-            {/* プレビューへ（撮影済みがある場合） */}
-            {capturedImages.length > 0 ? (
-              <TouchableOpacity
-                onPress={() => setStep("preview")}
-                style={{
-                  width: 50,
-                  height: 50,
-                  borderRadius: 12,
-                  overflow: "hidden",
-                  borderWidth: 2,
-                  borderColor: "#FFFFFF",
-                }}
-              >
-                <Image
-                  source={{ uri: capturedImages[capturedImages.length - 1].uri }}
-                  style={{ width: "100%", height: "100%" }}
-                />
-              </TouchableOpacity>
-            ) : (
-              <View style={{ width: 50, height: 50 }} />
-            )}
+  // ─── 概要（2面の枠） ───
+  const count = (shots.out ? 1 : 0) + (shots.in ? 1 : 0);
+  return (
+    <ScreenContainer edges={["top", "left", "right", "bottom"]}>
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingTop: 6 }}>
+        <Pressable onPress={() => router.back()} accessibilityLabel="戻る" style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+          <IconSymbol name="arrow.left" size={24} color={colors.foreground} />
+        </Pressable>
+        <Text accessibilityRole="header" style={{ color: colors.foreground, fontSize: 18, fontWeight: "900" }}>カードを読み取る</Text>
+      </View>
+      <ScrollView contentContainerStyle={{ alignItems: "center", paddingBottom: 24 }}>
+        <View style={{ width: contentW, gap: 14, paddingTop: 8 }}>
+          {isDemo && (
+            <ErrorBanner title="デモモードでは読み取りを使えません" message="カードの読み取り（AI）はログインが必要です。デモでは手入力と分析をお試しください。" />
+          )}
+          {error && <ErrorBanner title="読み取りエラー" message={error} />}
+          {notice && (
+            <View style={{ padding: 12, borderRadius: 12, backgroundColor: `${colors.primary}14` }}>
+              <Text style={{ color: colors.foreground, fontSize: 14 }}>{notice}</Text>
+            </View>
+          )}
+          {(["out", "in"] as CardSide[]).map((side) => (
+            <SlotCard
+              key={side}
+              side={side}
+              shot={shots[side]}
+              width={contentW}
+              onCamera={() => setCameraFor(side)}
+              onPick={() => void pick(side)}
+              onRemove={() => setShots((p) => ({ ...p, [side]: null }))}
+            />
+          ))}
+          <View style={{ padding: 14, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, gap: 6 }}>
+            <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: "900" }}>きれいに読むコツ</Text>
+            <Text style={{ color: colors.muted, fontSize: 14, lineHeight: 21 }}>
+              ・四隅の■が4つとも写ればOK（逆さ・縦向きでも自動で直します）{"\n"}
+              ・影が入らない明るい場所で、カードを平らに{"\n"}
+              ・「■未検出」と出たら撮り直すと精度が上がります
+            </Text>
           </View>
         </View>
-      </CameraView>
+      </ScrollView>
+      <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface }}>
+        <Pressable
+          disabled={count === 0 || isDemo}
+          onPress={() => void start()}
+          accessibilityRole="button"
+          style={[{ minHeight: 54, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, opacity: count === 0 || isDemo ? 0.4 : 1 }, shadowPrimary]}
+        >
+          <Text style={{ color: colors.onPrimary, fontSize: 17, fontWeight: "900" }}>{count === 0 ? "カードを撮影してください" : `${count}面を読み取る`}</Text>
+        </Pressable>
+      </View>
+    </ScreenContainer>
+  );
+}
+
+function SlotCard({ side, shot, width, onCamera, onPick, onRemove }: { side: CardSide; shot: Shot | null; width: number; onCamera: () => void; onPick: () => void; onRemove: () => void }) {
+  const colors = useColors();
+  const info = SIDE_INFO[side];
+  const thumbW = Math.min(width - 32, 420);
+  const p = shot?.prepared;
+  const badge = !shot ? null : !p ? { text: "確認中…", color: colors.muted } : p.rectified ? { text: p.blur?.isBlurry ? "補正OK・ブレ?" : "補正OK", color: p.blur?.isBlurry ? colors.warning : colors.success } : Platform.OS === "web" ? { text: "■未検出", color: colors.warning } : { text: "撮影済み", color: colors.success };
+  return (
+    <View style={[{ backgroundColor: colors.surface, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: colors.border, gap: 12 }, shadowSm]}>
+      <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
+        <Text style={{ color: colors.foreground, fontSize: 20, fontWeight: "900" }}>{info.title}</Text>
+        <Text style={{ color: colors.muted, fontSize: 15, fontWeight: "700" }}>{info.sub}</Text>
+        {badge && (
+          <View style={{ marginLeft: "auto", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: `${badge.color}22` }}>
+            <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "800" }}>{badge.text}</Text>
+          </View>
+        )}
+      </View>
+      {shot ? (
+        <Image
+          source={{ uri: p?.rectified ? `data:image/jpeg;base64,${p.base64}` : shot.uri }}
+          style={{ width: thumbW, height: thumbW / CARD_ASPECT, borderRadius: 10, alignSelf: "center", backgroundColor: colors.background }}
+          resizeMode="contain"
+          accessibilityLabel={`${info.title}の写真`}
+        />
+      ) : (
+        <Pressable onPress={onCamera} style={{ height: 120, borderRadius: 14, borderWidth: 2, borderStyle: "dashed", borderColor: colors.border, alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <IconSymbol name="camera.fill" size={28} color={colors.muted} />
+          <Text style={{ color: colors.muted, fontSize: 15, fontWeight: "700" }}>タップして撮影</Text>
+        </Pressable>
+      )}
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <SlotButton label={shot ? "撮り直す" : "撮影する"} icon="camera.fill" onPress={onCamera} />
+        <SlotButton label={shot ? "写真" : "写真から選ぶ"} icon="photo.on.rectangle" onPress={onPick} />
+        {shot && <SlotButton label="外す" icon="trash.fill" onPress={onRemove} />}
+      </View>
     </View>
+  );
+}
+
+function SlotButton({ label, icon, onPress }: { label: string; icon: "camera.fill" | "photo.on.rectangle" | "trash.fill"; onPress: () => void }) {
+  const colors = useColors();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" style={{ flex: 1, flexDirection: "row", gap: 6, minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" }}>
+      <IconSymbol name={icon} size={18} color={colors.primary} />
+      <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: "800" }}>{label}</Text>
+    </Pressable>
   );
 }
